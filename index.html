@@ -9,7 +9,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="روشن-نزدیک شدن">
+<meta name="apple-mobile-web-app-title" content="روشن پورټال">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1724,7 +1724,7 @@
   // ---------------- utils ----------------
   function fmtDate(ts){
     var d = new Date(ts);
-    return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true});
   }
   function escapeHtml(s){
     return String(s==null?'':s).replace(/[&<>"']/g, function(c){
