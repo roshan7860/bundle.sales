@@ -65,7 +65,7 @@ var state={
  currentUser:null,users:[],bundles:[],complaints:[],rolls:[],
  managerSessions:[],section:null,loading:true,error:"",
  modal:null,reportResetAt:0,salesResetAt:0,unsubs:[],
- lastBundleCount:0,initializedSnapshot:false,usersLoaded:false,usersLoadError:false
+ lastBundleCount:0,initializedSnapshot:false
 };
 
 var MENUS={
@@ -93,55 +93,32 @@ var ROLE_LABEL={admin:"اډمین",manager:"منیجر",nto:"NTO"};
 
 function sGetDoc(name){
  return db.collection("appdata").doc(name).get().then(function(s){
-  if(!s.exists)return {exists:false,list:null};
+  if(!s.exists)return {__missing:true};
   var d=s.data()||{};
-  return {exists:true,list:Array.isArray(d.list)?d.list:null};
+  return Array.isArray(d.list)?d.list:[];
  });
 }
 function sSetDoc(name,list){return db.collection("appdata").doc(name).set({list:list});}
 function loadJSON(key,fallback){
- return sGetDoc(key).then(function(r){
-  if(r.exists&&Array.isArray(r.list))return r.list;
-  return fallback;
- });
-}
-function recoverUsersFromIndividualDocs(){
- return db.collection("appdata").collection("users").get().then(function(snap){
-  var arr=[];
-  snap.forEach(function(doc){
-   var u=doc.data();
-   if(u&&u.username)arr.push(u);
-  });
-  return arr;
- }).catch(function(){return []});
-}
-function loadUsersSafely(){
- return db.collection("appdata").doc("users").get().then(function(s){
-  if(s.exists){
-   var d=s.data()||{};
-   var arr=Array.isArray(d.list)?d.list:[];
-   if(arr.length){
-    state.users=arr; state.usersLoaded=true; state.usersLoadError=false;
-    return arr;
-   }
-   return recoverUsersFromIndividualDocs().then(function(recovered){
-    state.users=recovered; state.usersLoaded=true; state.usersLoadError=false;
-    return recovered;
-   });
-  }
-  return recoverUsersFromIndividualDocs().then(function(recovered){
-   state.users=recovered; state.usersLoaded=true; state.usersLoadError=false;
-   return recovered;
-  });
- }).catch(function(err){
-  state.usersLoadError=true; state.usersLoaded=false;
-  throw err;
+ return sGetDoc(key).then(function(v){
+  return v&&v.__missing?fallback:v;
  });
 }
 function saveJSON(key,obj){return sSetDoc(key,obj)}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function persistUsers(){return saveJSON("users",state.users)}
+function persistBundles(){return saveJSON("bundles",state.bundles)}
+function persistComplaints(){return saveJSON("complaints",state.complaints)}
+function persistRolls(){return saveJSON("rolls",state.rolls)}
+function persistSessions(){return saveJSON("managerSessions",state.managerSessions)}
+
 function ensureSeed(){
- return loadUsersSafely().then(function(users){
-  if(users&&users.length){
+ return db.collection("appdata").doc("users").get().then(function(s){
+  // IMPORTANT: Never replace existing users because of a temporary/network read error.
+  // Seed the default admin only when the users document truly does not exist.
+  if(s.exists){
+   var data=s.data()||{};
+   state.users=Array.isArray(data.list)?data.list:[];
    var legacy=state.users.find(function(u){return u.username==="admin"&&u.role==="admin"});
    if(legacy){
     legacy.username=DEFAULT_ADMIN_USER;
@@ -150,11 +127,8 @@ function ensureSeed(){
    }
    return null;
   }
-  return db.collection("appdata").doc("users").get().then(function(s){
-   if(s.exists)return null;
-   state.users=[{username:DEFAULT_ADMIN_USER,password:DEFAULT_ADMIN_PASS,role:"admin",status:"enabled",createdBy:"system"}];
-   return persistUsers();
-  });
+  state.users=[{username:DEFAULT_ADMIN_USER,password:DEFAULT_ADMIN_PASS,role:"admin",status:"enabled",createdBy:"system"}];
+  return persistUsers();
  });
 }
 function loadAll(){
@@ -187,9 +161,7 @@ function activateManagerSession(user){
  var sid=uid();
  setSessionId(sid);
  var now=Date.now();
- state.managerSessions=state.managerSessions.filter(function(x){
-   return x&&x.username!==user.username;
-  });
+ state.managerSessions=state.managerSessions.filter(function(x){return x.username!==user.username});
  state.managerSessions.push({username:user.username,sessionId:sid,updatedAt:now});
  return persistSessions();
 }
@@ -572,19 +544,7 @@ function exportXlsx(data,name){
 /* ================= REAL-TIME ================= */
 function attachListeners(){
  if(state.unsubs.length)return;
- state.unsubs.push(db.collection("appdata").doc("users").onSnapshot(function(s){
- if(s.exists){
-  var d=s.data()||{};
-  if(Array.isArray(d.list)){
-   state.users=d.list;
-   state.usersLoaded=true;
-   state.usersLoadError=false;
-   render();
-  }
- }
-},function(){
- state.usersLoadError=true;
-}));
+ state.unsubs.push(db.collection("appdata").doc("users").onSnapshot(function(s){if(s.exists&&s.data().list){state.users=s.data().list;render()}}));
  state.unsubs.push(db.collection("appdata").doc("bundles").onSnapshot(function(s){
   if(s.exists&&s.data().list){state.bundles=s.data().list;checkBundleChanges();render()}
  }));
