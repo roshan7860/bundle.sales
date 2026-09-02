@@ -915,7 +915,7 @@
     }else{
       list.innerHTML = '<table><thead><tr><th>شمیره</th><th>د بنډل نوم</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
         myBundles.map(function(b){
-          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="د بنډل نوم">'+escapeHtml(b.field2)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDate(b.createdAt)+'</td></tr>';
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="د بنډل نوم">'+escapeHtml(b.field2)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
         }).join('')+
       '</tbody></table>';
     }
@@ -968,7 +968,7 @@
     }else{
       list.innerHTML = '<table><thead><tr><th>شمیره</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
         myRequests.map(function(b){
-          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDate(b.createdAt)+'</td></tr>';
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
         }).join('')+
       '</tbody></table>';
     }
@@ -1059,7 +1059,7 @@
           '<td data-label="حالت">'+statusCell+'</td>'+
           (canProcess ? '<td data-label="تائيد کوونکى-مدير">'+(b.actionedBy?escapeHtml(b.actionedBy):'—')+'</td>' : '')+
           '<td data-label="يادونه-شوې">'+(b.comment?escapeHtml(b.comment):'—')+'</td>'+
-          '<td data-label="نیټه">'+fmtDate(b.createdAt)+'</td>'+
+          '<td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td>'+
           (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">ریسبمیټ</button>' : '')+'</td>' : '')+
         '</tr>';
       }).join('')+
@@ -1681,7 +1681,7 @@
       list.innerHTML = state.rolls.map(function(r){
         return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
           '<div style="font-size:14px;">'+escapeHtml(r.text)+'</div>'+
-          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDate(r.createdAt)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(r.createdAt)+'</div>'+
         '</div>';
       }).join('');
     }
@@ -1715,7 +1715,7 @@
         return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
           (role!=='nto' ? '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">له: '+escapeHtml(c.fromUsername)+'</div>' : '')+
           '<div style="font-size:14px;">'+escapeHtml(c.text)+'</div>'+
-          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDate(c.createdAt)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(c.createdAt)+'</div>'+
         '</div>';
       }).join('');
     }
@@ -1725,6 +1725,11 @@
   function fmtDate(ts){
     var d = new Date(ts);
     return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true});
+  }
+  // Same as fmtDate but forces left-to-right rendering so the date/time
+  // order doesn't get flipped by the page's RTL text direction.
+  function fmtDateHtml(ts){
+    return '<span dir="ltr" style="unicode-bidi:isolate">'+fmtDate(ts)+'</span>';
   }
   function escapeHtml(s){
     return String(s==null?'':s).replace(/[&<>"']/g, function(c){
