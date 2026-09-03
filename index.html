@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260903-02">
+<meta name="app-build-version" content="20260903-03">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -611,6 +611,67 @@
       var seeded = [{username:DEFAULT_ADMIN_USER, password:DEFAULT_ADMIN_PASS, role:'admin', status:'enabled', createdBy:'system'}];
       state.users = seeded;
       return saveJSON('users', seeded);
+    });
+  }
+
+  // ---------------- REPAIR/MIGRATION: rebuild sales reports from approved bundles ----------------
+  // Older approved bundles were saved in the bundles table but some of them
+  // were never added to managerSales/ntoSales. On first load after this build,
+  // rebuild both reports from ALL approved bundles exactly once. This also
+  // prevents duplicate counting of old approvals. A Firestore transaction is
+  // used so a simultaneous approval cannot leave the migration half-applied.
+  var SALES_MIGRATION_KEY = 'approved-bundle-sales-v1';
+  function migrateApprovedBundleSales(){
+    return db.collection('appdata').doc('salesTotals').get().then(function(snap){
+      var d = snap.exists ? (snap.data() || {}) : {};
+      if(d._migrations && d._migrations[SALES_MIGRATION_KEY]) return;
+
+      return db.runTransaction(function(tx){
+        var bundlesRef = db.collection('appdata').doc('bundles');
+        var totalsRef = db.collection('appdata').doc('salesTotals');
+        return Promise.all([tx.get(bundlesRef), tx.get(totalsRef)]).then(function(reads){
+          var bundlesSnap = reads[0];
+          var totalsSnap = reads[1];
+          var totals = totalsSnap.exists ? (totalsSnap.data() || {}) : {};
+          if(totals._migrations && totals._migrations[SALES_MIGRATION_KEY]) return;
+
+          var list = (bundlesSnap.exists && bundlesSnap.data().list) ? bundlesSnap.data().list : [];
+          var managerSales = {};
+          var ntoSales = {};
+
+          list.forEach(function(b){
+            if(!b || b.status!=='approved') return;
+            var amt = extractNumber(b.comment);
+            var ntoUser = b.ntoUsername;
+            var mgrUser = b.actionedBy || findAssignedManager(ntoUser);
+
+            if(ntoUser){
+              if(!ntoSales[ntoUser]) ntoSales[ntoUser] = {total:0, count:0};
+              ntoSales[ntoUser].total += amt;
+              ntoSales[ntoUser].count += 1;
+            }
+            if(mgrUser){
+              if(!managerSales[mgrUser]) managerSales[mgrUser] = {total:0, count:0};
+              managerSales[mgrUser].total += amt;
+              managerSales[mgrUser].count += 1;
+            }
+          });
+
+          var migrations = totals._migrations || {};
+          migrations[SALES_MIGRATION_KEY] = {completedAt:Date.now(), bundleCount:list.filter(function(b){return b && b.status==='approved';}).length};
+          tx.set(totalsRef, {managerSales:managerSales, ntoSales:ntoSales, _migrations:migrations}, {merge:true});
+        });
+      }).then(function(){
+        state.managerSales = {};
+        state.ntoSales = {};
+        return db.collection('appdata').doc('salesTotals').get();
+      }).then(function(snap2){
+        if(snap2.exists){
+          var d2=snap2.data()||{};
+          state.managerSales=d2.managerSales||{};
+          state.ntoSales=d2.ntoSales||{};
+        }
+      });
     });
   }
 
@@ -2324,6 +2385,13 @@
 
   // ---------------- init ----------------
   loadAll().then(function(){
+    // Repair the historical report data before showing the dashboard. If the
+    // migration cannot run because of a temporary connection problem, keep the
+    // app usable and retry on the next page load.
+    return migrateApprovedBundleSales().catch(function(err){
+      console.warn('sales migration failed', err);
+    });
+  }).then(function(){
     restoreSession();
     state.loading = false;
     attachListeners();
