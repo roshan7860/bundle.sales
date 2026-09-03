@@ -2016,7 +2016,7 @@
     role = role || 'admin';
     var ntoUsers = state.users.filter(function(u){
       if(u.role!=='nto') return false;
-      if(role==='manager') return u.createdBy===state.currentUser.username;
+      if(role==='manager') return true;
       return true;
     });
 
