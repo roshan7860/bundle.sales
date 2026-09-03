@@ -444,6 +444,22 @@ function loadScriptWithTimeout(src, timeoutMs, cb){
   document.head.appendChild(el);
 }
 
+// Firebase CDN fallback for mobile browsers that cannot reach gstatic.
+function loadFirebaseCompat(fileName, cb){
+  var urls = [
+    'https://www.gstatic.com/firebasejs/10.13.2/'+fileName,
+    'https://cdn.jsdelivr.net/npm/firebase@10.13.2/'+fileName
+  ];
+  function attempt(i){
+    if(i>=urls.length){ cb(new Error('Firebase CDN unavailable')); return; }
+    loadScriptWithTimeout(urls[i], 8000, function(err){
+      if(!err){ cb(null); return; }
+      attempt(i+1);
+    });
+  }
+  attempt(0);
+}
+
 function showBootError(title, detail){
   var appEl = document.getElementById('app');
   if(!appEl) return;
@@ -477,12 +493,12 @@ function ensureXLSX(cb){
 // its own 15s timeout, then start the app. xlsx is NOT loaded here -- it's
 // only needed for the "export to Excel" buttons, so it's loaded lazily on
 // first use instead (see ensureXLSX below) to keep the initial load light.
-loadScriptWithTimeout('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js', 15000, function(err1){
+loadFirebaseCompat('firebase-app-compat.js', function(err1){
   if(err1){
     showBootError('د شبکې ستونزه', 'اړین فایل (Firebase) لوډ نشو. ممکن ستاسو د موبایل انټرنټ دا سایټ بندوي -- که کولی شئ WiFi یا بل سیم آزمویئ، بیا هڅه وکړئ.');
     return;
   }
-  loadScriptWithTimeout('https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js', 15000, function(err2){
+  loadFirebaseCompat('firebase-firestore-compat.js', function(err2){
     if(err2){
       showBootError('د شبکې ستونزه', 'اړین فایل (Firestore) لوډ نشو. ممکن ستاسو د موبایل انټرنټ دا سایټ بندوي -- که کولی شئ WiFi یا بل سیم آزمویئ، بیا هڅه وکړئ.');
       return;
@@ -1563,13 +1579,15 @@ function startApp(){
       // clearing/deleting bundle rows later can never zero out a real report.
       var amt = extractNumber(comment);
       var mgrUser = state.currentUser.username;
-      if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
-      state.managerSales[mgrUser].total += amt;
-      state.managerSales[mgrUser].count += 1;
       var ntoUser = b.ntoUsername;
-      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
-      state.ntoSales[ntoUser].total += amt;
-      state.ntoSales[ntoUser].count += 1;
+      var mgrKey = salesKey(mgrUser);
+      var ntoKey = salesKey(ntoUser);
+      if(!state.managerSales[mgrKey]) state.managerSales[mgrKey] = {total:0, count:0};
+      state.managerSales[mgrKey].total += amt;
+      state.managerSales[mgrKey].count += 1;
+      if(!state.ntoSales[ntoKey]) state.ntoSales[ntoKey] = {total:0, count:0};
+      state.ntoSales[ntoKey].total += amt;
+      state.ntoSales[ntoKey].count += 1;
       // Use atomic field increments instead of persistSalesTotals()'s full
       // read-modify-write: two managers approving bundles at nearly the same
       // moment could otherwise each overwrite the whole salesTotals document
@@ -1578,10 +1596,10 @@ function startApp(){
       // lost that way, and set(...,{merge:true}) also creates the document
       // and any missing nested fields on the very first approval.
       var incUpdate = {};
-      incUpdate['managerSales.'+mgrUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['managerSales.'+mgrUser+'.count'] = firebase.firestore.FieldValue.increment(1);
-      incUpdate['ntoSales.'+ntoUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['ntoSales.'+ntoUser+'.count'] = firebase.firestore.FieldValue.increment(1);
+      incUpdate['managerSales.'+mgrKey+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['managerSales.'+mgrKey+'.count'] = firebase.firestore.FieldValue.increment(1);
+      incUpdate['ntoSales.'+ntoKey+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['ntoSales.'+ntoKey+'.count'] = firebase.firestore.FieldValue.increment(1);
       saves.push(db.collection('appdata').doc('salesTotals').set(incUpdate, {merge:true}));
     }
     Promise.all(saves).then(function(){
@@ -1919,14 +1937,31 @@ function startApp(){
     var d = new Date(ts);
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
+  function salesKey(username){ return encodeURIComponent(String(username||'')); }
+  function getSalesEntry(map, username){
+    if(!map) return null;
+    var direct = map[username];
+    if(direct && typeof direct.total==='number') return direct;
+    var safe = map[salesKey(username)];
+    if(safe && typeof safe.total==='number') return safe;
+    // Read legacy data written through dotted Firestore field paths.
+    var u = String(username||'');
+    var dot = u.lastIndexOf('.');
+    if(dot>0){
+      var parent = map[u.slice(0,dot)];
+      var legacy = parent && parent[u.slice(dot+1)];
+      if(legacy && typeof legacy.total==='number') return legacy;
+    }
+    return null;
+  }
   function managerStats(managerUsername){
-    var s = state.managerSales[managerUsername];
-    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+    var s = getSalesEntry(state.managerSales, managerUsername);
+    return s ? {total:Number(s.total)||0, count:Number(s.count)||0} : {total:0, count:0};
   }
 
   function ntoStats(ntoUsername){
-    var s = state.ntoSales[ntoUsername];
-    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+    var s = getSalesEntry(state.ntoSales, ntoUsername);
+    return s ? {total:Number(s.total)||0, count:Number(s.count)||0} : {total:0, count:0};
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
@@ -1986,8 +2021,8 @@ function startApp(){
           var nu = btn.getAttribute('data-nto-reset');
           var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
           if(!ok) return;
-          state.ntoSales[nu] = {total:0, count:0};
-          var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
+          state.ntoSales[salesKey(nu)] = {total:0, count:0};
+          var resetObj = {}; resetObj['ntoSales.'+salesKey(nu)] = {total:0, count:0};
           db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
             showToast('د '+nu+' راپور پاک شو.');
             renderSection(document.getElementById('main-area'));
@@ -2050,8 +2085,8 @@ function startApp(){
             var mgr = btn.getAttribute('data-mgr-reset');
             var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
             if(!ok) return;
-            state.managerSales[mgr] = {total:0, count:0};
-            var resetObj = {}; resetObj['managerSales.'+mgr] = {total:0, count:0};
+            state.managerSales[salesKey(mgr)] = {total:0, count:0};
+            var resetObj = {}; resetObj['managerSales.'+salesKey(mgr)] = {total:0, count:0};
             db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
               showToast('د '+mgr+' راپور پاک شو.');
               renderSection(document.getElementById('main-area'));
