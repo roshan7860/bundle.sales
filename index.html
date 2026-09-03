@@ -412,8 +412,8 @@
     bundles:[],
     complaints:[],
     rolls:[],
-    managerResetAt:{}, // { managerUsername: timestamp }
-    ntoResetAt:{}, // { ntoUsername: timestamp }
+    managerSales:{}, // { managerUsername: {total, count} } -- persisted independently of the bundles table
+    ntoSales:{}, // { ntoUsername: {total, count} } -- persisted independently of the bundles table
     section:null,
     loading:true,
     loadError:false,
@@ -585,10 +585,15 @@
       loadJSON('bundles', []).then(function(v){ state.bundles = v; }),
       loadJSON('complaints', []).then(function(v){ state.complaints = v; }),
       loadJSON('rolls', []).then(function(v){ state.rolls = v; }),
-      db.collection('appdata').doc('reportMeta').get().then(function(snap){
-        state.managerResetAt = (snap.exists && snap.data().managerResetAt) ? snap.data().managerResetAt : {};
-        state.ntoResetAt = (snap.exists && snap.data().ntoResetAt) ? snap.data().ntoResetAt : {};
-      }).catch(function(){ state.managerResetAt = {}; state.ntoResetAt = {}; })
+      db.collection('appdata').doc('salesTotals').get().then(function(snap){
+        return {ok:true, exists:snap.exists, data: snap.exists ? snap.data() : null};
+      }).catch(function(err){
+        return {ok:false, exists:false, data:null, err:err};
+      }).then(function(res){
+        if(!res.ok){ return Promise.reject(res.err || new Error('salesTotals-read-failed')); }
+        state.managerSales = (res.data && res.data.managerSales) ? res.data.managerSales : {};
+        state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
+      })
     ]);
   }
 
@@ -614,7 +619,7 @@
   function persistBundles(){ return saveJSON('bundles', state.bundles); }
   function persistComplaints(){ return saveJSON('complaints', state.complaints); }
   function persistRolls(){ return saveJSON('rolls', state.rolls); }
-  function persistReportMeta(){ return db.collection('appdata').doc('reportMeta').set({managerResetAt: state.managerResetAt, ntoResetAt: state.ntoResetAt}); }
+  function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales}); }
 
   // ---------------- role menu config ----------------
   var MENUS = {
@@ -1071,7 +1076,7 @@
 
       if(role==='admin'){
         document.getElementById('sales-reset').onclick = function(){
-          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د پلور راپور ټول معلومات بالکل ختم کړئ؟ دا به د NTO د بنډل او پلور راپور پاڼې هم پاکې کړي. دا کار بیرته نشي کیدلی.');
+          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د بنډلونو ټوله جدول (لیست) ړنګ کړئ؟ د مدیرانو او مشتریانو د فروشاتو ټوله شمیرې به اغیزمنې نشي، یوازې دا جدول به پاک شي. دا کار بیرته نشي کیدلی.');
           if(!ok) return;
           state.bundles = [];
           persistBundles().then(function(){
@@ -1111,6 +1116,11 @@
         var statusCell = statusBadge(b.status);
         if(canProcess && (b.status==='pending' || b.status==='resubmit')){
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
+        }else if(canProcess && b.status==='in_process'){
+          // Clickable too: lets another admin/manager take over a bundle that
+          // got stuck "in process" (e.g. the first manager closed the tab
+          // instead of pressing "لغوه کول") instead of it being locked forever.
+          statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي — کلیک وکړئ چې دنده واخلئ':'')+'">'+statusLabel(b.status)+'</span>';
         }
         return '<tr>'+
           (role!=='nto' ? '<td data-label="مشتري-نوم">'+escapeHtml(b.ntoUsername)+'</td>' : '')+
@@ -1202,8 +1212,13 @@
   function openProcessModal(bundleId){
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
-    if(b.status!=='pending' && b.status!=='resubmit') return;
-    var previousStatus = b.status;
+    if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
+    // If it's already in_process (another manager started it but never
+    // finished/cancelled -- e.g. closed the tab), take it over. Use the
+    // originally-stored previous status so "لغوه کول" still reverts it
+    // correctly instead of getting stuck on 'in_process' forever.
+    var previousStatus = (b.status==='in_process') ? (b.prevStatusBeforeProcess || 'pending') : b.status;
+    b.prevStatusBeforeProcess = previousStatus;
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
     persistBundles().then(function(){
@@ -1222,6 +1237,7 @@
     if(b && b.status==='in_process'){
       b.status = state.modal.previousStatus;
       b.processingBy = null;
+      b.prevStatusBeforeProcess = null;
       persistBundles().then(function(){
         state.modal = null;
         render();
@@ -1230,6 +1246,14 @@
       state.modal = null;
       render();
     }
+  }
+
+  // Confirms, then rejects the bundle immediately with the given quick-phrase
+  // as its note -- no separate "Reject" click needed afterwards.
+  function confirmQuickReject(phrase){
+    var ok = window.confirm('آیا ډاډه یاست چې غواړئ دا بنډل د "'+phrase+'" یادونې سره رد کړئ؟');
+    if(!ok) return;
+    submitProcessDecision('rejected', phrase);
   }
 
   function submitProcessDecision(decision, overrideComment){
@@ -1244,8 +1268,26 @@
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
     b.processingBy = null;
+    b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
-    persistBundles().then(function(){
+
+    var saves = [persistBundles()];
+    if(decision==='approved'){
+      // Accumulate into the persistent sales counters -- these live in their
+      // own document, completely independent of the bundles table, so
+      // clearing/deleting bundle rows later can never zero out a real report.
+      var amt = extractNumber(comment);
+      var mgrUser = state.currentUser.username;
+      if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
+      state.managerSales[mgrUser].total += amt;
+      state.managerSales[mgrUser].count += 1;
+      var ntoUser = b.ntoUsername;
+      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
+      state.ntoSales[ntoUser].total += amt;
+      state.ntoSales[ntoUser].count += 1;
+      saves.push(persistSalesTotals());
+    }
+    Promise.all(saves).then(function(){
       showToast(decision==='approved' ? 'بنډل فعاله شو.' : 'بنډل رد شو.');
       state.modal = null;
       render();
@@ -1261,6 +1303,7 @@
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
     b.processingBy = null;
+    b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
     persistBundles().then(function(){
       showToast('بنډلونه غیري فعاله شول.');
@@ -1424,9 +1467,9 @@
       document.getElementById('proc-approve').onclick = function(){ submitProcessDecision('approved'); };
       document.getElementById('proc-reject').onclick = function(){ submitProcessDecision('rejected'); };
       document.getElementById('proc-cancel').onclick = closeProcessModal;
-      document.getElementById('proc-quick-1').onclick = function(){ document.getElementById('proc-comment').value = 'پیسې اضافه کړه'; };
-      document.getElementById('proc-quick-2').onclick = function(){ document.getElementById('proc-comment').value = 'پیسې کمې دي'; };
-      document.getElementById('proc-quick-3').onclick = function(){ document.getElementById('proc-comment').value = 'شمیره غلطه ده'; };
+      document.getElementById('proc-quick-1').onclick = function(){ confirmQuickReject('پیسې اضافه کړه'); };
+      document.getElementById('proc-quick-2').onclick = function(){ confirmQuickReject('پیسې کمې دي'); };
+      document.getElementById('proc-quick-3').onclick = function(){ confirmQuickReject('شمیره غلطه ده'); };
     }else if(state.modal.type==='deactivate-confirm'){
       document.getElementById('deact-confirm').onclick = submitDeactivate;
       document.getElementById('deact-cancel').onclick = closeProcessModal;
@@ -1557,27 +1600,13 @@
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
   function managerStats(managerUsername){
-    var resetAt = state.managerResetAt[managerUsername] || 0;
-    var total=0, count=0;
-    state.bundles.forEach(function(b){
-      if(b.status==='approved' && b.actionedBy===managerUsername && b.actionedAt && b.actionedAt > resetAt){
-        total += extractNumber(b.comment);
-        count++;
-      }
-    });
-    return {total:total, count:count};
+    var s = state.managerSales[managerUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
   }
 
   function ntoStats(ntoUsername){
-    var resetAt = state.ntoResetAt[ntoUsername] || 0;
-    var total=0, count=0;
-    state.bundles.forEach(function(b){
-      if(b.status==='approved' && b.ntoUsername===ntoUsername && b.actionedAt && b.actionedAt > resetAt){
-        total += extractNumber(b.comment);
-        count++;
-      }
-    });
-    return {total:total, count:count};
+    var s = state.ntoSales[ntoUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
@@ -1631,8 +1660,8 @@
         var nu = btn.getAttribute('data-nto-reset');
         var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
         if(!ok) return;
-        state.ntoResetAt[nu] = Date.now();
-        persistReportMeta().then(function(){
+        state.ntoSales[nu] = {total:0, count:0};
+        persistSalesTotals().then(function(){
           showToast('د '+nu+' راپور پاک شو.');
           renderSection(document.getElementById('main-area'));
         });
@@ -1690,8 +1719,8 @@
             var mgr = btn.getAttribute('data-mgr-reset');
             var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
             if(!ok) return;
-            state.managerResetAt[mgr] = Date.now();
-            persistReportMeta().then(function(){
+            state.managerSales[mgr] = {total:0, count:0};
+            persistSalesTotals().then(function(){
               showToast('د '+mgr+' راپور پاک شو.');
               renderSection(document.getElementById('main-area'));
             });
@@ -1858,10 +1887,10 @@
     state.unsubs.push(db.collection('appdata').doc('rolls').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){ state.rolls = snap.data().list; render(); }
     }));
-    state.unsubs.push(db.collection('appdata').doc('reportMeta').onSnapshot(function(snap){
+    state.unsubs.push(db.collection('appdata').doc('salesTotals').onSnapshot(function(snap){
       if(snap.exists){
-        state.managerResetAt = snap.data().managerResetAt || {};
-        state.ntoResetAt = snap.data().ntoResetAt || {};
+        state.managerSales = snap.data().managerSales || {};
+        state.ntoSales = snap.data().ntoSales || {};
         render();
       }
     }));
