@@ -422,6 +422,8 @@
     modal:null, // {type:'process'|'resubmit', bundleId, previousStatus}
     mySessionToken:null, // in-memory only; used for single-session manager enforcement
     knownBundleIds:null,  // sentinel: null = not yet initialized, true = initialized
+    notifiedBundleIds:{}, // bundle.id -> true once this client has already rung/notified for it (avoids duplicate rings)
+    assignTimer:null,     // pending setTimeout handle, see scheduleAssignWindowRefresh()
     forceDesktop:false,
     mobileMenuOpen:false,
     userMenuOpen:false,
@@ -432,6 +434,10 @@
     userPage:{manager:0, nto:0}
   };
   var PAGE_SIZE = 20;
+  // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
+  // manager who created that customer's account, before it opens up to all
+  // managers. See isBundleClaimableByManager() / findAssignedManager().
+  var ASSIGN_WAIT_MS = 40000;
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -921,8 +927,8 @@
 
     if(state.section==='bundle' && role==='nto') return renderBundleSection(body);
     if(state.section==='deactivate' && role==='nto') return renderDeactivateSection(body);
-    if(state.section==='managers' && role==='admin') return renderUsersSection(body, 'manager', true, true);
-    if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin');
+    if(state.section==='managers' && role==='admin') return renderUsersSection(body, 'manager', true, true, role);
+    if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin', role);
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
     if(state.section==='nto_report' && role==='admin') return renderNtoReportSection(body, headerRow);
@@ -963,6 +969,7 @@
         field1:v1, field2:v2,
         status: 'pending',
         createdAt: Date.now(),
+        waitStartAt: Date.now(),
         comment:null, actionedBy:null, actionedAt:null, processingBy:null,
         ntoSeen: true
       };
@@ -1016,6 +1023,7 @@
         type:'deactivate',
         status: 'pending',
         createdAt: Date.now(),
+        waitStartAt: Date.now(),
         comment:null, actionedBy:null, actionedAt:null, processingBy:null,
         ntoSeen: true
       };
@@ -1041,6 +1049,7 @@
 
   // ---------------- SALES REPORT SECTION ----------------
   function renderSalesSection(body, role, headerRow){
+    if(role==='manager') scheduleAssignWindowRefresh();
     var allRows = role==='nto' ? state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username;}) : state.bundles.slice();
     var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
     var canProcess = (role==='admin' || role==='manager');
@@ -1114,8 +1123,14 @@
       '</tr></thead><tbody>'+
       pageRows.map(function(b){
         var statusCell = statusBadge(b.status);
-        if(canProcess && (b.status==='pending' || b.status==='resubmit')){
+        var claimableNow = role==='manager' ? isBundleClaimableByManager(b, state.currentUser.username) : true;
+        if(canProcess && (b.status==='pending' || b.status==='resubmit') && claimableNow){
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
+        }else if(canProcess && (b.status==='pending' || b.status==='resubmit') && !claimableNow){
+          // Reserved for the customer's own manager during the assignment
+          // window -- visible, but not clickable by other managers yet.
+          var ownMgr = findAssignedManager(b.ntoUsername);
+          statusCell = '<span class="badge '+badgeClass(b.status)+'" title="لومړی '+escapeHtml(ownMgr||'')+' ته وروسپارل شوی">'+statusLabel(b.status)+'</span>';
         }else if(canProcess && b.status==='in_process'){
           // Clickable too: lets another admin/manager take over a bundle that
           // got stuck "in process" (e.g. the first manager closed the tab
@@ -1208,11 +1223,59 @@
     return '<span class="badge '+badgeClass(status)+'">'+statusLabel(status)+'</span>';
   }
 
+  // ---------------- MANAGER ASSIGNMENT WINDOW (problem #4) ----------------
+  // The manager who created a customer's account is that customer's "own"
+  // manager. When the customer sends a fresh bundle (or resubmits one), it
+  // is reserved for that manager for ASSIGN_WAIT_MS. If the assigned
+  // manager hasn't acted on it by then, it opens up to every manager.
+  function findAssignedManager(ntoUsername){
+    var ntoUser = state.users.find(function(u){ return u.username===ntoUsername && u.role==='nto'; });
+    if(!ntoUser || !ntoUser.createdBy) return null;
+    var creator = state.users.find(function(u){ return u.username===ntoUser.createdBy && u.role==='manager'; });
+    return creator ? creator.username : null;
+  }
+  function isBundleClaimableByManager(b, managerUsername){
+    if(b.status!=='pending' && b.status!=='resubmit') return true; // in_process/etc: existing take-over rules apply
+    var assignedMgr = findAssignedManager(b.ntoUsername);
+    if(!assignedMgr) return true; // customer has no owning manager (e.g. created by admin) -- open to all immediately
+    var startedAt = b.waitStartAt || b.createdAt || 0;
+    if(Date.now() - startedAt >= ASSIGN_WAIT_MS) return true; // window elapsed -- open to all managers
+    return managerUsername === assignedMgr;
+  }
+  // Schedules a single re-render once the soonest pending assignment window
+  // in state.bundles elapses, so the UI/notifications update on their own
+  // instead of requiring a manual refresh.
+  function scheduleAssignWindowRefresh(){
+    if(state.assignTimer){ clearTimeout(state.assignTimer); state.assignTimer=null; }
+    if(!state.currentUser || state.currentUser.role!=='manager') return;
+    var now = Date.now();
+    var soonest = null;
+    state.bundles.forEach(function(b){
+      if(b.status!=='pending' && b.status!=='resubmit') return;
+      if(isBundleClaimableByManager(b, state.currentUser.username)) return;
+      var startedAt = b.waitStartAt || b.createdAt || 0;
+      var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
+      if(remaining>0 && (soonest===null || remaining<soonest)) soonest = remaining;
+    });
+    if(soonest!==null){
+      state.assignTimer = setTimeout(function(){
+        state.assignTimer = null;
+        checkForManagerEscalations();
+        render();
+      }, soonest+250);
+    }
+  }
+
   // ---------------- PROCESS MODAL (admin/manager: approve/reject) ----------------
   function openProcessModal(bundleId){
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
     if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
+    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit') && !isBundleClaimableByManager(b, state.currentUser.username)){
+      var ownMgr = findAssignedManager(b.ntoUsername);
+      showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
+      return;
+    }
     // If it's already in_process (another manager started it but never
     // finished/cancelled -- e.g. closed the tab), take it over. Use the
     // originally-stored previous status so "لغوه کول" still reverts it
@@ -1333,6 +1396,7 @@
     b.actionedAt = null;
     b.processingBy = null;
     b.ntoSeen = true;
+    b.waitStartAt = Date.now();
     persistBundles().then(function(){
       showToast('بنډل بیا وړاندې شو.');
       state.modal = null;
@@ -1480,8 +1544,14 @@
   }
 
   // ---------------- USERS SECTIONS (managers / ntos) ----------------
-  function renderUsersSection(body, targetRole, canToggle, canDelete){
-    var fullList = state.users.filter(function(u){return u.role===targetRole;});
+  function renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole){
+    // Managers only see the customer accounts THEY created; other managers'
+    // customers stay hidden from them. Admin still sees everyone.
+    var fullList = state.users.filter(function(u){
+      if(u.role!==targetRole) return false;
+      if(targetRole==='nto' && viewerRole==='manager' && u.createdBy!==state.currentUser.username) return false;
+      return true;
+    });
     var roleLabel = targetRole==='manager' ? 'مدير' : 'مشتري';
     var isNto = targetRole==='nto';
     var searchFields = isNto ? ['username','address','contact','createdBy'] : ['username'];
@@ -1520,7 +1590,7 @@
     };
 
     if(fullList.length){
-      bindSearchInput('nu-search', function(){return state.userSearch[targetRole];}, function(v){state.userSearch[targetRole]=v; state.userPage[targetRole]=0;}, function(){ renderUsersSection(body, targetRole, canToggle, canDelete); });
+      bindSearchInput('nu-search', function(){return state.userSearch[targetRole];}, function(v){state.userSearch[targetRole]=v; state.userPage[targetRole]=0;}, function(){ renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole); });
     }
 
     var listEl = document.getElementById('nu-list');
@@ -1555,7 +1625,7 @@
 
     renderPager(document.getElementById('nu-pager'), page, list.length, function(np){
       state.userPage[targetRole] = np;
-      renderUsersSection(body, targetRole, canToggle, canDelete);
+      renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole);
     });
 
     if(canToggle){
@@ -1592,7 +1662,10 @@
   // ---------------- REPORT SECTION ----------------
   function extractNumber(str){
     if(!str) return 0;
-    var m = String(str).match(/\d+(\.\d+)?/);
+    // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
+    // commas are still picked up as a single number instead of just "1".
+    var cleaned = String(str).replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+    var m = cleaned.match(/\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
   }
   function dateKeyOf(ts){
@@ -1911,17 +1984,46 @@
       if(b.status==='pending' || b.status==='resubmit'){
         if(prevMap[b.id]===undefined || prevMap[b.id]!==b.status){
           newOnes.push(b);
+          delete state.notifiedBundleIds[b.id]; // fresh submit/resubmit -- allow re-notifying
         }
       }
     });
 
     if(newOnes.length && state.currentUser && (state.currentUser.role==='manager' || state.currentUser.role==='admin')){
-      if(state.currentUser.role==='manager'){
-        playNotificationSound();
+      // For a manager, only ring immediately for bundles that are actually
+      // theirs to claim right now (their own customer, or a customer with
+      // no owning manager). Bundles reserved for a different manager stay
+      // silent for this manager until the assignment window elapses --
+      // see checkForManagerEscalations(), which fires later.
+      var mine = state.currentUser.role==='admin' ? newOnes : newOnes.filter(function(b){
+        return isBundleClaimableByManager(b, state.currentUser.username);
+      });
+      if(mine.length){
+        if(state.currentUser.role==='manager') playNotificationSound();
+        var b0 = mine[0];
+        state.notifiedBundleIds[b0.id] = true;
+        fireNotification('نوی بنډل راغی', b0.ntoUsername+' یو بنډل ('+b0.field2+') ولیږه.');
+        showToast('نوی بنډل راغی — '+b0.ntoUsername);
       }
-      var b0 = newOnes[0];
-      fireNotification('نوی بنډل راغی', b0.ntoUsername+' یو بنډل ('+b0.field2+') ولیږه.');
-      showToast('نوی بنډل راغی — '+b0.ntoUsername);
+    }
+    scheduleAssignWindowRefresh();
+  }
+
+  // ---------------- notify a manager once an assignment window elapses and a
+  // bundle that wasn't theirs opens up to all managers ----------------
+  function checkForManagerEscalations(){
+    if(!state.currentUser || state.currentUser.role!=='manager') return;
+    var opened = state.bundles.filter(function(b){
+      if(b.status!=='pending' && b.status!=='resubmit') return false;
+      if(state.notifiedBundleIds[b.id]) return false;
+      return isBundleClaimableByManager(b, state.currentUser.username);
+    });
+    if(opened.length){
+      playNotificationSound();
+      opened.forEach(function(b){ state.notifiedBundleIds[b.id] = true; });
+      var b0 = opened[0];
+      fireNotification('یو بنډل اوس تاسو ته هم خلاص دی', b0.ntoUsername+' — ('+b0.field2+')');
+      showToast('یو بنډل اوس ستاسو لپاره هم خلاص شو — '+b0.ntoUsername);
     }
   }
 
@@ -1995,6 +2097,7 @@
     restoreSession();
     state.loading = false;
     attachListeners();
+    scheduleAssignWindowRefresh();
     render();
   });
 
