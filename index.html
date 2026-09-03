@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260903-05">
+<meta name="app-build-version" content="20260903-06">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -676,7 +676,7 @@
   }
 
   function rebuildSalesTotalsOnce(){
-    var MIGRATION_VERSION = 2;
+    var MIGRATION_VERSION = 3;
     return db.collection('appdata').doc('salesTotals').get().then(function(snap){
       var data=snap.exists?(snap.data()||{}):{};
       if(data.salesRebuildVersion===MIGRATION_VERSION) return;
@@ -1570,9 +1570,36 @@
     var commentEl = document.getElementById('proc-comment');
     var comment = (overrideComment!=null) ? overrideComment : (commentEl ? commentEl.value.trim() : '');
     if(!comment){ showToast('مهرباني وکړئ لومړی کمینټ ولیکئ.'); return; }
+
     var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
     if(!b) return;
-    b.status = decision; // 'approved' or 'rejected'
+
+    // IMPORTANT: determine the manager BEFORE clearing processingBy/action fields.
+    // If a manager opened the bundle, processingBy is the safest source of the
+    // manager identity. Admin approvals are assigned to the customer's manager.
+    var approvedManager = null;
+    if(decision==='approved'){
+      if(b.processingBy){
+        var processingMgr = state.users.find(function(u){
+          return u.username===b.processingBy && u.role==='manager';
+        });
+        if(processingMgr) approvedManager = processingMgr.username;
+      }
+      if(!approvedManager && b.actionedBy){
+        var actionMgr = state.users.find(function(u){
+          return u.username===b.actionedBy && u.role==='manager';
+        });
+        if(actionMgr) approvedManager = actionMgr.username;
+      }
+      if(!approvedManager) approvedManager = findAssignedManager(b.ntoUsername);
+      if(!approvedManager && state.currentUser.role==='manager') approvedManager = state.currentUser.username;
+      if(!approvedManager){
+        showToast('د دې مشتری لپاره مدیر پیدا نه شو؛ فروشات ثبت نه شول.');
+        return;
+      }
+    }
+
+    b.status = decision;
     b.comment = comment;
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
@@ -1580,40 +1607,69 @@
     b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
 
-    var saves = [persistBundles()];
-    if(decision==='approved'){
-      // Accumulate into the persistent sales counters -- these live in their
-      // own document, completely independent of the bundles table, so
-      // clearing/deleting bundle rows later can never zero out a real report.
-      var amt = extractNumber(comment);
-      var mgrUser = state.currentUser.role==='manager' ? state.currentUser.username : findAssignedManager(b.ntoUsername);
-      if(!mgrUser && b.processingBy){ var pu=state.users.find(function(u){return u.username===b.processingBy && u.role==='manager';}); if(pu) mgrUser=pu.username; }
-      if(!mgrUser) mgrUser=state.currentUser.username;
-      if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
-      state.managerSales[mgrUser].total += amt;
-      state.managerSales[mgrUser].count += 1;
-      var ntoUser = b.ntoUsername;
-      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
-      state.ntoSales[ntoUser].total += amt;
-      state.ntoSales[ntoUser].count += 1;
-      // Use atomic field increments instead of persistSalesTotals()'s full
-      // read-modify-write: two managers approving bundles at nearly the same
-      // moment could otherwise each overwrite the whole salesTotals document
-      // with their own slightly-stale local copy and silently erase the
-      // other's amount. Increments applied directly on the server can't be
-      // lost that way, and set(...,{merge:true}) also creates the document
-      // and any missing nested fields on the very first approval.
-      var incUpdate = {};
-      incUpdate['managerSales.'+mgrUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['managerSales.'+mgrUser+'.count'] = firebase.firestore.FieldValue.increment(1);
-      incUpdate['ntoSales.'+ntoUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['ntoSales.'+ntoUser+'.count'] = firebase.firestore.FieldValue.increment(1);
-      saves.push(db.collection('appdata').doc('salesTotals').set(incUpdate, {merge:true}));
+    if(decision!=='approved'){
+      persistBundles().then(function(){
+        showToast('بنډل رد شو.');
+        state.modal = null;
+        render();
+      }).catch(function(){ showToast('د بنډل د ثبت پر مهال تېروتنه وشوه.'); });
+      return;
     }
-    Promise.all(saves).then(function(){
-      showToast(decision==='approved' ? 'بنډل فعاله شو.' : 'بنډل رد شو.');
+
+    var amount = extractNumber(comment);
+    var ntoUser = b.ntoUsername;
+    var totalsRef = db.collection('appdata').doc('salesTotals');
+    var bundlesRef = db.collection('appdata').doc('bundles');
+    var bundleList = state.bundles.slice();
+
+    // Save the approval and both sales reports in one Firestore transaction.
+    // Do NOT use dotted field paths such as managerSales.<username> because a
+    // username can contain characters that Firestore interprets as path syntax.
+    // Reading the whole maps and writing them back also guarantees that the
+    // number entered in the comment is actually persisted for both accounts.
+    db.runTransaction(function(tx){
+      return Promise.all([tx.get(totalsRef), tx.get(bundlesRef)]).then(function(reads){
+        var totalsSnap = reads[0];
+        var bundlesSnap = reads[1];
+        var totals = totalsSnap.exists ? (totalsSnap.data()||{}) : {};
+        var managerSales = totals.managerSales || {};
+        var ntoSales = totals.ntoSales || {};
+
+        if(!managerSales[approvedManager]) managerSales[approvedManager] = {total:0,count:0};
+        managerSales[approvedManager] = {
+          total:(Number(managerSales[approvedManager].total)||0) + amount,
+          count:(Number(managerSales[approvedManager].count)||0) + 1
+        };
+
+        if(ntoUser){
+          if(!ntoSales[ntoUser]) ntoSales[ntoUser] = {total:0,count:0};
+          ntoSales[ntoUser] = {
+            total:(Number(ntoSales[ntoUser].total)||0) + amount,
+            count:(Number(ntoSales[ntoUser].count)||0) + 1
+          };
+        }
+
+        tx.set(totalsRef, {
+          managerSales: managerSales,
+          ntoSales: ntoSales,
+          lastApprovalAt: Date.now()
+        }, {merge:true});
+        tx.set(bundlesRef, {list: bundleList}, {merge:true});
+      });
+    }).then(function(){
+      // Refresh the counters from Firestore so the فروشات page always displays
+      // the server value immediately after activation.
+      return totalsRef.get();
+    }).then(function(snap){
+      var d = snap.exists ? (snap.data()||{}) : {};
+      state.managerSales = d.managerSales || {};
+      state.ntoSales = d.ntoSales || {};
+      showToast('بنډل فعاله شو او فروشات د مشتری او مدیر دواړو حسابونو ته جمع شول.');
       state.modal = null;
       render();
+    }).catch(function(err){
+      console.error(err);
+      showToast('د فعالولو یا فروشاتو د ثبت پر مهال تېروتنه وشوه. بیا هڅه وکړئ.');
     });
   }
 
