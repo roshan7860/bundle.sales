@@ -31,7 +31,7 @@
 // browser tabs and the installed app within about a minute automatically.
 // ---------------------------------------------------------------------------
 
-var CACHE_VERSION = 'v8'; // <-- bump this string on every deploy
+var CACHE_VERSION = 'v9'; // <-- bump this string on every deploy
 var CACHE_NAME = 'roshan-portal-' + CACHE_VERSION;
 
 // Only this site's own root document. Keep this list small and same-origin
