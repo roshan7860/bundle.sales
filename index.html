@@ -288,10 +288,6 @@
     position:absolute;top:14px;left:14px;
   }
   .modal-card{position:relative;}
-  .proc-number-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;}
-  .proc-number-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-  .proc-number{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:.3px;}
-  .proc-bundle-name{font-size:13px;color:var(--ink-soft);margin-top:6px;}
 
   /* ---------- Top bar with hamburger toggle (shown on every screen size) ---------- */
   .mobile-topbar{
@@ -416,18 +412,15 @@
     bundles:[],
     complaints:[],
     rolls:[],
-    managerSales:{}, // { managerUsername: {total, count} } -- persisted independently of the bundles table
-    ntoSales:{}, // { ntoUsername: {total, count} } -- persisted independently of the bundles table
+    managerResetAt:{}, // { managerUsername: timestamp }
+    ntoResetAt:{}, // { ntoUsername: timestamp }
     section:null,
     loading:true,
-    loadError:false,
     error:"",
     unsubs:null,
     modal:null, // {type:'process'|'resubmit', bundleId, previousStatus}
     mySessionToken:null, // in-memory only; used for single-session manager enforcement
     knownBundleIds:null,  // sentinel: null = not yet initialized, true = initialized
-    notifiedBundleIds:{}, // bundle.id -> true once this client has already rung/notified for it (avoids duplicate rings)
-    assignTimer:null,     // pending setTimeout handle, see scheduleAssignWindowRefresh()
     forceDesktop:false,
     mobileMenuOpen:false,
     userMenuOpen:false,
@@ -438,12 +431,6 @@
     userPage:{manager:0, nto:0}
   };
   var PAGE_SIZE = 20;
-  // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
-  // manager who created that customer's account, before it opens up to all
-  // managers. This applies no matter what the bundle's current status is
-  // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
-  // findAssignedManager().
-  var ASSIGN_WAIT_MS = 40*60*1000; // 40 minutes
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -508,46 +495,21 @@
   }
 
   // ---------------- storage helpers (Firestore) ----------------
-  // sGetDoc reports whether the read actually succeeded (ok:true/false),
-  // separately from whether the document simply has no data yet.
-  // This distinction matters: a failed read (offline, network blip, etc.)
-  // must NEVER be treated the same as "no data exists" -- doing so is what
-  // caused ensureSeed() to wipe out every manager/NTO account whenever a
-  // Firestore read hiccuped (see ensureSeed below).
   function sGetDoc(name){
     return db.collection('appdata').doc(name).get().then(function(snap){
-      return {ok:true, list:(snap.exists && snap.data().list) ? snap.data().list : null};
-    }).catch(function(err){
-      return {ok:false, list:null, err:err};
-    });
+      return (snap.exists && snap.data().list) ? snap.data().list : null;
+    }).catch(function(){ return null; });
   }
   function sSetDoc(name, list){
     return db.collection('appdata').doc(name).set({list:list});
   }
   function loadJSON(key, fallback){
-    return sGetDoc(key).then(function(res){ return res.ok ? (res.list || fallback) : fallback; });
+    return sGetDoc(key).then(function(v){ return v || fallback; });
   }
   function saveJSON(key, obj){
     return sSetDoc(key, obj);
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-
-  // ---------------- digit normalization (Pashto/Persian & Arabic-Indic numerals) ----------------
-  // Many phones default their keyboard to Pashto/Dari, which types numbers as
-  // ۰۱۲۳۴۵۶۷۸۹ (Extended Arabic-Indic, U+06F0-06F9) or ٠١٢٣٤٥٦٧٨٩ (Arabic-Indic,
-  // U+0660-0669) instead of plain 0-9. Every place in this app that reads a
-  // number (phone/reference numbers, and the amount typed inside a comment)
-  // must treat those the same as normal digits, or the value silently comes
-  // out as empty/zero.
-  function normalizeDigits(str){
-    if(str==null) return str;
-    return String(str).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function(ch){
-      var code = ch.charCodeAt(0);
-      if(code>=0x06F0 && code<=0x06F9) return String(code-0x06F0); // پښتو/دري ۰-۹
-      if(code>=0x0660 && code<=0x0669) return String(code-0x0660); // عربي ٠-٩
-      return ch;
-    });
-  }
 
   // ---------------- session persistence (stay logged in across refresh/close) ----------------
   var SESSION_KEY = 'roshanPortalSession';
@@ -581,15 +543,7 @@
   var DEFAULT_ADMIN_PASS = 'Roshan.af.admin@af&786';
 
   function ensureSeed(){
-    return sGetDoc('users').then(function(res){
-      if(!res.ok){
-        // The read itself failed (offline/network/permission hiccup) --
-        // we do NOT know whether real accounts exist on the server, so we
-        // must not seed/overwrite anything here. Bubble this up as a
-        // rejection so loadAll() can retry instead of wiping real data.
-        return Promise.reject(res.err || new Error('users-read-failed'));
-      }
-      var users = res.list;
+    return loadJSON('users', null).then(function(users){
       if(users && users.length){
         state.users = users;
         var legacy = state.users.find(function(u){return u.username==='admin' && u.role==='admin';});
@@ -600,55 +554,30 @@
         }
         return;
       }
-      // The read succeeded AND the users doc is genuinely empty/missing --
-      // this only happens on the very first run, so it's safe to seed.
       var seeded = [{username:DEFAULT_ADMIN_USER, password:DEFAULT_ADMIN_PASS, role:'admin', status:'enabled', createdBy:'system'}];
       state.users = seeded;
       return saveJSON('users', seeded);
     });
   }
 
-  function loadAllOnce(){
+  function loadAll(){
     return Promise.all([
       ensureSeed(),
       loadJSON('bundles', []).then(function(v){ state.bundles = v; }),
       loadJSON('complaints', []).then(function(v){ state.complaints = v; }),
       loadJSON('rolls', []).then(function(v){ state.rolls = v; }),
-      db.collection('appdata').doc('salesTotals').get().then(function(snap){
-        return {ok:true, exists:snap.exists, data: snap.exists ? snap.data() : null};
-      }).catch(function(err){
-        return {ok:false, exists:false, data:null, err:err};
-      }).then(function(res){
-        if(!res.ok){ return Promise.reject(res.err || new Error('salesTotals-read-failed')); }
-        state.managerSales = (res.data && res.data.managerSales) ? res.data.managerSales : {};
-        state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
-      })
+      db.collection('appdata').doc('reportMeta').get().then(function(snap){
+        state.managerResetAt = (snap.exists && snap.data().managerResetAt) ? snap.data().managerResetAt : {};
+        state.ntoResetAt = (snap.exists && snap.data().ntoResetAt) ? snap.data().ntoResetAt : {};
+      }).catch(function(){ state.managerResetAt = {}; state.ntoResetAt = {}; })
     ]);
-  }
-
-  // Retries the initial load a few times (with a short delay) before giving
-  // up and showing an error screen. This protects against transient
-  // network/Firestore hiccups being mistaken for "no data exists yet".
-  function loadAll(retriesLeft){
-    if(retriesLeft===undefined) retriesLeft = 5;
-    return loadAllOnce().then(function(){
-      state.loadError = false;
-    }).catch(function(err){
-      if(retriesLeft<=0){
-        state.loadError = true;
-        return;
-      }
-      return new Promise(function(resolve){ setTimeout(resolve, 1500); }).then(function(){
-        return loadAll(retriesLeft-1);
-      });
-    });
   }
 
   function persistUsers(){ return saveJSON('users', state.users); }
   function persistBundles(){ return saveJSON('bundles', state.bundles); }
   function persistComplaints(){ return saveJSON('complaints', state.complaints); }
   function persistRolls(){ return saveJSON('rolls', state.rolls); }
-  function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales}); }
+  function persistReportMeta(){ return db.collection('appdata').doc('reportMeta').set({managerResetAt: state.managerResetAt, ntoResetAt: state.ntoResetAt}); }
 
   // ---------------- role menu config ----------------
   var MENUS = {
@@ -681,29 +610,6 @@
     var root = document.getElementById('app');
     if(state.loading){
       root.innerHTML = '<div class="login-wrap"><div class="login-card"><p class="sub">بار کیږي...</p></div></div>';
-      renderModalLayer();
-      return;
-    }
-    if(state.loadError){
-      root.innerHTML =
-        '<div class="blocked-wrap"><div class="blocked-card">'+
-          '<div class="icon">&#9888;</div>'+
-          '<h3 style="direction:rtl;">له سرور سره وصل کیدل ونشول</h3>'+
-          '<p style="direction:rtl;">ستاسو انټرنېټ یا Firestore سره اړیکه ونشوه. مهرباني وکړئ خپل انټرنېټ وګورئ او بیا هڅه وکړئ. (د خوندیتوب لپاره، تر هغه چې اړیکه بیرته رغیږي، هیڅ معلومات به نه بدلیږي.)</p>'+
-          '<button class="btn btn-ghost" id="le-retry" style="margin-top:18px;">بیا هڅه</button>'+
-        '</div></div>';
-      var retryBtn = document.getElementById('le-retry');
-      if(retryBtn){
-        retryBtn.onclick = function(){
-          state.loading = true;
-          render();
-          loadAll().then(function(){
-            restoreSession();
-            state.loading = false;
-            render();
-          });
-        };
-      }
       renderModalLayer();
       return;
     }
@@ -822,11 +728,7 @@
       state.section = menu[0].key;
     }
 
-    var actionableCount = state.bundles.filter(function(b){
-      if(b.status!=='pending' && b.status!=='resubmit') return false;
-      if(role==='manager') return isBundleClaimableByManager(b, state.currentUser.username);
-      return true;
-    }).length;
+    var actionableCount = state.bundles.filter(function(b){return b.status==='pending' || b.status==='resubmit';}).length;
     var myUnseen = state.bundles.filter(function(b){
       return b.ntoUsername===state.currentUser.username && (b.status==='approved'||b.status==='rejected') && !b.ntoSeen;
     }).length;
@@ -954,8 +856,8 @@
 
     if(state.section==='bundle' && role==='nto') return renderBundleSection(body);
     if(state.section==='deactivate' && role==='nto') return renderDeactivateSection(body);
-    if(state.section==='managers' && role==='admin') return renderUsersSection(body, 'manager', true, true, role);
-    if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin', role);
+    if(state.section==='managers' && role==='admin') return renderUsersSection(body, 'manager', true, true);
+    if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin');
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
     if(state.section==='nto_report' && role==='admin') return renderNtoReportSection(body, headerRow);
@@ -981,7 +883,7 @@
 
     var f1 = document.getElementById('bd-f1');
     f1.addEventListener('input', function(){
-      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      var v = f1.value.replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -996,7 +898,6 @@
         field1:v1, field2:v2,
         status: 'pending',
         createdAt: Date.now(),
-        waitStartAt: Date.now(),
         comment:null, actionedBy:null, actionedAt:null, processingBy:null,
         ntoSeen: true
       };
@@ -1014,7 +915,7 @@
     }else{
       list.innerHTML = '<table><thead><tr><th>شمیره</th><th>د بنډل نوم</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
         myBundles.map(function(b){
-          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="د بنډل نوم">'+escapeHtml(b.field2)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="د بنډل نوم">'+escapeHtml(b.field2)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDate(b.createdAt)+'</td></tr>';
         }).join('')+
       '</tbody></table>';
     }
@@ -1035,7 +936,7 @@
 
     var f1 = document.getElementById('dz-f1');
     f1.addEventListener('input', function(){
-      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      var v = f1.value.replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1050,7 +951,6 @@
         type:'deactivate',
         status: 'pending',
         createdAt: Date.now(),
-        waitStartAt: Date.now(),
         comment:null, actionedBy:null, actionedAt:null, processingBy:null,
         ntoSeen: true
       };
@@ -1068,7 +968,7 @@
     }else{
       list.innerHTML = '<table><thead><tr><th>شمیره</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
         myRequests.map(function(b){
-          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDate(b.createdAt)+'</td></tr>';
         }).join('')+
       '</tbody></table>';
     }
@@ -1076,30 +976,8 @@
 
   // ---------------- SALES REPORT SECTION ----------------
   function renderSalesSection(body, role, headerRow){
-    if(role==='manager') scheduleAssignWindowRefresh();
     var allRows = role==='nto' ? state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username;}) : state.bundles.slice();
-    if(role==='manager'){
-      // A bundle that's still within its assignment window and belongs to a
-      // different manager's customer is completely hidden from this
-      // manager's bundle page -- not just non-clickable -- until the window
-      // elapses or it becomes theirs. Everything else (already
-      // approved/rejected/etc., or unassigned customers) stays visible.
-      allRows = allRows.filter(function(b){
-        if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
-        return isBundleClaimableByManager(b, state.currentUser.username);
-      });
-    }
     var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
-    // Resubmitted bundles are pinned to the very top of the list for every
-    // role (admin/manager/nto), most-recently-resubmitted first. Everything
-    // else keeps its existing relative order (Array#sort is stable).
-    rows = rows.slice().sort(function(a,b){
-      var ar = a.status==='resubmit' ? 1 : 0;
-      var br = b.status==='resubmit' ? 1 : 0;
-      if(ar!==br) return br-ar;
-      if(ar===1 && br===1) return (b.waitStartAt||b.createdAt||0) - (a.waitStartAt||a.createdAt||0);
-      return 0;
-    });
     var canProcess = (role==='admin' || role==='manager');
 
     if(headerRow && (role==='admin' || role==='manager')){
@@ -1133,7 +1011,7 @@
 
       if(role==='admin'){
         document.getElementById('sales-reset').onclick = function(){
-          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د بنډلونو ټوله جدول (لیست) ړنګ کړئ؟ د مدیرانو او مشتریانو د فروشاتو ټوله شمیرې به اغیزمنې نشي، یوازې دا جدول به پاک شي. دا کار بیرته نشي کیدلی.');
+          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د پلور راپور ټول معلومات بالکل ختم کړئ؟ دا به د NTO د بنډل او پلور راپور پاڼې هم پاکې کړي. دا کار بیرته نشي کیدلی.');
           if(!ok) return;
           state.bundles = [];
           persistBundles().then(function(){
@@ -1173,35 +1051,16 @@
         var statusCell = statusBadge(b.status);
         if(canProcess && (b.status==='pending' || b.status==='resubmit')){
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
-        }else if(canProcess && b.status==='in_process'){
-          // Clickable too: lets another admin/manager take over a bundle that
-          // got stuck "in process" (e.g. the first manager closed the tab
-          // instead of pressing "لغوه کول") instead of it being locked forever.
-          statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي — کلیک وکړئ چې دنده واخلئ':'')+'">'+statusLabel(b.status)+'</span>';
-        }
-        // For a manager, the full number (and its copy button) is only shown
-        // once the bundle is approved ("فعاله شوو"). Every other status
-        // masks the last 3 digits and hides the copy button. Admin always
-        // sees the full number/button as before.
-        var maskForManager = (role==='manager' && b.status!=='approved');
-        var numberDisplay = maskForManager ? maskLast3Digits(b.field1) : escapeHtml(b.field1);
-        var copyBtn = (role==='manager' && !maskForManager) ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '';
-        // Resubmitted rows show the resubmit date/time instead of the
-        // original submission date/time.
-        var dateVal = (b.status==='resubmit' && b.waitStartAt) ? b.waitStartAt : b.createdAt;
-        var dateCell = fmtDateHtml(dateVal);
-        if(role==='admin'){
-          dateCell = '<button class="icon-btn-sm" data-delete-bundle="'+b.id+'" title="ړنګول" style="margin-left:6px;">&#128465;</button>'+dateCell;
         }
         return '<tr>'+
           (role!=='nto' ? '<td data-label="مشتري-نوم">'+escapeHtml(b.ntoUsername)+'</td>' : '')+
-          '<td data-label="اړيکې-شمیره">'+numberDisplay+copyBtn+'</td>'+
+          '<td data-label="اړيکې-شمیره">'+escapeHtml(b.field1)+(role==='manager' ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '')+'</td>'+
           '<td data-label="بنډل-نوو">'+escapeHtml(b.field2)+'</td>'+
           '<td data-label="حالت">'+statusCell+'</td>'+
           (canProcess ? '<td data-label="تائيد کوونکى-مدير">'+(b.actionedBy?escapeHtml(b.actionedBy):'—')+'</td>' : '')+
           '<td data-label="يادونه-شوې">'+(b.comment?escapeHtml(b.comment):'—')+'</td>'+
-          '<td data-label="نیټه">'+dateCell+'</td>'+
-          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">بیا ځلې لیږل</button>' : '')+'</td>' : '')+
+          '<td data-label="نیټه">'+fmtDate(b.createdAt)+'</td>'+
+          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">ریسبمیټ</button>' : '')+'</td>' : '')+
         '</tr>';
       }).join('')+
     '</tbody></table></div><div id="bundle-pager"></div></div>';
@@ -1230,14 +1089,6 @@
         };
       });
     }
-    if(role==='admin'){
-      Array.prototype.forEach.call(document.querySelectorAll('[data-delete-bundle]'), function(btn){
-        btn.onclick = function(e){
-          e.stopPropagation();
-          deleteBundleById(btn.getAttribute('data-delete-bundle'));
-        };
-      });
-    }
   }
 
   function copyToClipboard(text){
@@ -1259,30 +1110,6 @@
     }else{
       fail();
     }
-  }
-
-  // Masks everything except the last 3 characters of a number with '***'
-  // (used to hide a customer's number from a manager until it's approved).
-  function maskLast3Digits(str){
-    str = String(str==null?'':str);
-    if(str.length<=3) return '***';
-    return escapeHtml(str.slice(0,-3))+'***';
-  }
-
-  // ---------------- ADMIN: delete a single bundle everywhere ----------------
-  // Asks for confirmation, then removes just this one bundle from the shared
-  // bundles table -- since every role reads the same table, this removes it
-  // for all users (admin/manager/nto) at once.
-  function deleteBundleById(bundleId){
-    var b = state.bundles.find(function(x){return x.id===bundleId;});
-    if(!b) return;
-    var ok = window.confirm('آیا تاسو ډاډه یاست چې غواړئ دا بنډل ړنګ کړئ؟ دا کار به دا بنډل د ټولو یوزرانو لپاره ړنګ کړي او بیرته نشي کیدلی.');
-    if(!ok) return;
-    state.bundles = state.bundles.filter(function(x){return x.id!==bundleId;});
-    persistBundles().then(function(){
-      showToast('بنډل ړنګ شو.');
-      renderDashboard(document.getElementById('app'));
-    });
   }
 
   function badgeClass(status){
@@ -1311,67 +1138,12 @@
     return '<span class="badge '+badgeClass(status)+'">'+statusLabel(status)+'</span>';
   }
 
-  // ---------------- MANAGER ASSIGNMENT WINDOW (problem #4) ----------------
-  // The manager who created a customer's account is that customer's "own"
-  // manager. When the customer sends a fresh bundle (or resubmits one), it
-  // is reserved for that manager for ASSIGN_WAIT_MS. If the assigned
-  // manager hasn't acted on it by then, it opens up to every manager.
-  function findAssignedManager(ntoUsername){
-    var ntoUser = state.users.find(function(u){ return u.username===ntoUsername && u.role==='nto'; });
-    if(!ntoUser || !ntoUser.createdBy) return null;
-    var creator = state.users.find(function(u){ return u.username===ntoUser.createdBy && u.role==='manager'; });
-    return creator ? creator.username : null;
-  }
-  function isBundleClaimableByManager(b, managerUsername){
-    // Approved/rejected/deactivated bundles are already decided -- no more
-    // contention over who may act on them, so always visible/claimable.
-    if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
-    var assignedMgr = findAssignedManager(b.ntoUsername);
-    if(!assignedMgr) return true; // customer has no owning manager (e.g. created by admin) -- open to all immediately
-    var startedAt = b.waitStartAt || b.createdAt || 0;
-    if(Date.now() - startedAt >= ASSIGN_WAIT_MS) return true; // window elapsed -- open to all managers
-    return managerUsername === assignedMgr;
-  }
-  // Schedules a single re-render once the soonest pending assignment window
-  // in state.bundles elapses, so the UI/notifications update on their own
-  // instead of requiring a manual refresh.
-  function scheduleAssignWindowRefresh(){
-    if(state.assignTimer){ clearTimeout(state.assignTimer); state.assignTimer=null; }
-    if(!state.currentUser || state.currentUser.role!=='manager') return;
-    var now = Date.now();
-    var soonest = null;
-    state.bundles.forEach(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return;
-      if(isBundleClaimableByManager(b, state.currentUser.username)) return;
-      var startedAt = b.waitStartAt || b.createdAt || 0;
-      var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
-      if(remaining>0 && (soonest===null || remaining<soonest)) soonest = remaining;
-    });
-    if(soonest!==null){
-      state.assignTimer = setTimeout(function(){
-        state.assignTimer = null;
-        checkForManagerEscalations();
-        render();
-      }, soonest+250);
-    }
-  }
-
   // ---------------- PROCESS MODAL (admin/manager: approve/reject) ----------------
   function openProcessModal(bundleId){
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
-    if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
-    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit'||b.status==='in_process') && !isBundleClaimableByManager(b, state.currentUser.username)){
-      var ownMgr = findAssignedManager(b.ntoUsername);
-      showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
-      return;
-    }
-    // If it's already in_process (another manager started it but never
-    // finished/cancelled -- e.g. closed the tab), take it over. Use the
-    // originally-stored previous status so "لغوه کول" still reverts it
-    // correctly instead of getting stuck on 'in_process' forever.
-    var previousStatus = (b.status==='in_process') ? (b.prevStatusBeforeProcess || 'pending') : b.status;
-    b.prevStatusBeforeProcess = previousStatus;
+    if(b.status!=='pending' && b.status!=='resubmit') return;
+    var previousStatus = b.status;
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
     persistBundles().then(function(){
@@ -1390,7 +1162,6 @@
     if(b && b.status==='in_process'){
       b.status = state.modal.previousStatus;
       b.processingBy = null;
-      b.prevStatusBeforeProcess = null;
       persistBundles().then(function(){
         state.modal = null;
         render();
@@ -1399,14 +1170,6 @@
       state.modal = null;
       render();
     }
-  }
-
-  // Confirms, then rejects the bundle immediately with the given quick-phrase
-  // as its note -- no separate "Reject" click needed afterwards.
-  function confirmQuickReject(phrase){
-    var ok = window.confirm('آیا ډاډه یاست چې غواړئ دا بنډل د "'+phrase+'" یادونې سره رد کړئ؟');
-    if(!ok) return;
-    submitProcessDecision('rejected', phrase);
   }
 
   function submitProcessDecision(decision, overrideComment){
@@ -1421,38 +1184,8 @@
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
     b.processingBy = null;
-    b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
-
-    var saves = [persistBundles()];
-    if(decision==='approved'){
-      // Accumulate into the persistent sales counters -- these live in their
-      // own document, completely independent of the bundles table, so
-      // clearing/deleting bundle rows later can never zero out a real report.
-      var amt = extractNumber(comment);
-      var mgrUser = state.currentUser.username;
-      if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
-      state.managerSales[mgrUser].total += amt;
-      state.managerSales[mgrUser].count += 1;
-      var ntoUser = b.ntoUsername;
-      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
-      state.ntoSales[ntoUser].total += amt;
-      state.ntoSales[ntoUser].count += 1;
-      // Use atomic field increments instead of persistSalesTotals()'s full
-      // read-modify-write: two managers approving bundles at nearly the same
-      // moment could otherwise each overwrite the whole salesTotals document
-      // with their own slightly-stale local copy and silently erase the
-      // other's amount. Increments applied directly on the server can't be
-      // lost that way, and set(...,{merge:true}) also creates the document
-      // and any missing nested fields on the very first approval.
-      var incUpdate = {};
-      incUpdate['managerSales.'+mgrUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['managerSales.'+mgrUser+'.count'] = firebase.firestore.FieldValue.increment(1);
-      incUpdate['ntoSales.'+ntoUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['ntoSales.'+ntoUser+'.count'] = firebase.firestore.FieldValue.increment(1);
-      saves.push(db.collection('appdata').doc('salesTotals').set(incUpdate, {merge:true}));
-    }
-    Promise.all(saves).then(function(){
+    persistBundles().then(function(){
       showToast(decision==='approved' ? 'بنډل فعاله شو.' : 'بنډل رد شو.');
       state.modal = null;
       render();
@@ -1468,7 +1201,6 @@
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
     b.processingBy = null;
-    b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
     persistBundles().then(function(){
       showToast('بنډلونه غیري فعاله شول.');
@@ -1498,7 +1230,6 @@
     b.actionedAt = null;
     b.processingBy = null;
     b.ntoSeen = true;
-    b.waitStartAt = Date.now();
     persistBundles().then(function(){
       showToast('بنډل بیا وړاندې شو.');
       state.modal = null;
@@ -1576,17 +1307,9 @@
           '<button class="btn btn-ghost btn-block" id="pw-cancel" style="margin-top:10px;">لغوه کول</button>'+
         '</div>';
     }else if(state.modal.type==='process'){
-      var procB = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
       layer.innerHTML =
         '<div class="modal-card">'+
           '<h3>د بنډل پروسس کول</h3>'+
-          '<div class="proc-number-box">'+
-            '<div class="proc-number-row">'+
-              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
-              '<button class="icon-btn-copy" id="proc-copy-number" title="کاپي کول">&#128203;</button>'+
-            '</div>'+
-            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
-          '</div>'+
           '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px 0;">'+
             '<button class="btn btn-sm btn-ghost" id="proc-quick-1">پیسې اضافه کړه</button>'+
@@ -1641,13 +1364,9 @@
       document.getElementById('proc-approve').onclick = function(){ submitProcessDecision('approved'); };
       document.getElementById('proc-reject').onclick = function(){ submitProcessDecision('rejected'); };
       document.getElementById('proc-cancel').onclick = closeProcessModal;
-      document.getElementById('proc-quick-1').onclick = function(){ confirmQuickReject('پیسې اضافه کړه'); };
-      document.getElementById('proc-quick-2').onclick = function(){ confirmQuickReject('پیسې کمې دي'); };
-      document.getElementById('proc-quick-3').onclick = function(){ confirmQuickReject('شمیره غلطه ده'); };
-      (function(){
-        var copyBtn = document.getElementById('proc-copy-number');
-        if(copyBtn){ copyBtn.onclick = function(){ var pb = state.bundles.find(function(x){return x.id===state.modal.bundleId;}); if(pb) copyToClipboard(pb.field1); }; }
-      })();
+      document.getElementById('proc-quick-1').onclick = function(){ document.getElementById('proc-comment').value = 'پیسې اضافه کړه'; };
+      document.getElementById('proc-quick-2').onclick = function(){ document.getElementById('proc-comment').value = 'پیسې کمې دي'; };
+      document.getElementById('proc-quick-3').onclick = function(){ document.getElementById('proc-comment').value = 'شمیره غلطه ده'; };
     }else if(state.modal.type==='deactivate-confirm'){
       document.getElementById('deact-confirm').onclick = submitDeactivate;
       document.getElementById('deact-cancel').onclick = closeProcessModal;
@@ -1658,14 +1377,8 @@
   }
 
   // ---------------- USERS SECTIONS (managers / ntos) ----------------
-  function renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole){
-    // Managers only see the customer accounts THEY created; other managers'
-    // customers stay hidden from them. Admin still sees everyone.
-    var fullList = state.users.filter(function(u){
-      if(u.role!==targetRole) return false;
-      if(targetRole==='nto' && viewerRole==='manager' && u.createdBy!==state.currentUser.username) return false;
-      return true;
-    });
+  function renderUsersSection(body, targetRole, canToggle, canDelete){
+    var fullList = state.users.filter(function(u){return u.role===targetRole;});
     var roleLabel = targetRole==='manager' ? 'مدير' : 'مشتري';
     var isNto = targetRole==='nto';
     var searchFields = isNto ? ['username','address','contact','createdBy'] : ['username'];
@@ -1704,7 +1417,7 @@
     };
 
     if(fullList.length){
-      bindSearchInput('nu-search', function(){return state.userSearch[targetRole];}, function(v){state.userSearch[targetRole]=v; state.userPage[targetRole]=0;}, function(){ renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole); });
+      bindSearchInput('nu-search', function(){return state.userSearch[targetRole];}, function(v){state.userSearch[targetRole]=v; state.userPage[targetRole]=0;}, function(){ renderUsersSection(body, targetRole, canToggle, canDelete); });
     }
 
     var listEl = document.getElementById('nu-list');
@@ -1739,7 +1452,7 @@
 
     renderPager(document.getElementById('nu-pager'), page, list.length, function(np){
       state.userPage[targetRole] = np;
-      renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole);
+      renderUsersSection(body, targetRole, canToggle, canDelete);
     });
 
     if(canToggle){
@@ -1776,11 +1489,7 @@
   // ---------------- REPORT SECTION ----------------
   function extractNumber(str){
     if(!str) return 0;
-    var normalized = normalizeDigits(str);
-    // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
-    // commas are still picked up as a single number instead of just "1".
-    var cleaned = normalized.replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
-    var m = cleaned.match(/\d+(\.\d+)?/);
+    var m = String(str).match(/\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
   }
   function dateKeyOf(ts){
@@ -1788,13 +1497,27 @@
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
   function managerStats(managerUsername){
-    var s = state.managerSales[managerUsername];
-    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+    var resetAt = state.managerResetAt[managerUsername] || 0;
+    var total=0, count=0;
+    state.bundles.forEach(function(b){
+      if(b.status==='approved' && b.actionedBy===managerUsername && b.actionedAt && b.actionedAt > resetAt){
+        total += extractNumber(b.comment);
+        count++;
+      }
+    });
+    return {total:total, count:count};
   }
 
   function ntoStats(ntoUsername){
-    var s = state.ntoSales[ntoUsername];
-    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+    var resetAt = state.ntoResetAt[ntoUsername] || 0;
+    var total=0, count=0;
+    state.bundles.forEach(function(b){
+      if(b.status==='approved' && b.ntoUsername===ntoUsername && b.actionedAt && b.actionedAt > resetAt){
+        total += extractNumber(b.comment);
+        count++;
+      }
+    });
+    return {total:total, count:count};
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
@@ -1848,9 +1571,8 @@
         var nu = btn.getAttribute('data-nto-reset');
         var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
         if(!ok) return;
-        state.ntoSales[nu] = {total:0, count:0};
-        var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
-        db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+        state.ntoResetAt[nu] = Date.now();
+        persistReportMeta().then(function(){
           showToast('د '+nu+' راپور پاک شو.');
           renderSection(document.getElementById('main-area'));
         });
@@ -1908,9 +1630,8 @@
             var mgr = btn.getAttribute('data-mgr-reset');
             var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
             if(!ok) return;
-            state.managerSales[mgr] = {total:0, count:0};
-            var resetObj = {}; resetObj['managerSales.'+mgr] = {total:0, count:0};
-            db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+            state.managerResetAt[mgr] = Date.now();
+            persistReportMeta().then(function(){
               showToast('د '+mgr+' راپور پاک شو.');
               renderSection(document.getElementById('main-area'));
             });
@@ -1960,7 +1681,7 @@
       list.innerHTML = state.rolls.map(function(r){
         return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
           '<div style="font-size:14px;">'+escapeHtml(r.text)+'</div>'+
-          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(r.createdAt)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDate(r.createdAt)+'</div>'+
         '</div>';
       }).join('');
     }
@@ -1994,7 +1715,7 @@
         return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
           (role!=='nto' ? '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">له: '+escapeHtml(c.fromUsername)+'</div>' : '')+
           '<div style="font-size:14px;">'+escapeHtml(c.text)+'</div>'+
-          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(c.createdAt)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDate(c.createdAt)+'</div>'+
         '</div>';
       }).join('');
     }
@@ -2004,11 +1725,6 @@
   function fmtDate(ts){
     var d = new Date(ts);
     return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true});
-  }
-  // Same as fmtDate but forces left-to-right rendering so the date/time
-  // order doesn't get flipped by the page's RTL text direction.
-  function fmtDateHtml(ts){
-    return '<span dir="ltr" style="unicode-bidi:isolate">'+fmtDate(ts)+'</span>';
   }
   function escapeHtml(s){
     return String(s==null?'':s).replace(/[&<>"']/g, function(c){
@@ -2060,7 +1776,7 @@
     if(state.unsubs) return;
     state.unsubs = [];
     state.unsubs.push(db.collection('appdata').doc('users').onSnapshot(function(snap){
-      if(snap.exists && snap.data().list){ state.users = snap.data().list; state.loadError = false; render(); }
+      if(snap.exists && snap.data().list){ state.users = snap.data().list; render(); }
     }));
     state.unsubs.push(db.collection('appdata').doc('bundles').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){
@@ -2077,10 +1793,10 @@
     state.unsubs.push(db.collection('appdata').doc('rolls').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){ state.rolls = snap.data().list; render(); }
     }));
-    state.unsubs.push(db.collection('appdata').doc('salesTotals').onSnapshot(function(snap){
+    state.unsubs.push(db.collection('appdata').doc('reportMeta').onSnapshot(function(snap){
       if(snap.exists){
-        state.managerSales = snap.data().managerSales || {};
-        state.ntoSales = snap.data().ntoSales || {};
+        state.managerResetAt = snap.data().managerResetAt || {};
+        state.ntoResetAt = snap.data().ntoResetAt || {};
         render();
       }
     }));
@@ -2101,46 +1817,17 @@
       if(b.status==='pending' || b.status==='resubmit'){
         if(prevMap[b.id]===undefined || prevMap[b.id]!==b.status){
           newOnes.push(b);
-          delete state.notifiedBundleIds[b.id]; // fresh submit/resubmit -- allow re-notifying
         }
       }
     });
 
     if(newOnes.length && state.currentUser && (state.currentUser.role==='manager' || state.currentUser.role==='admin')){
-      // For a manager, only ring immediately for bundles that are actually
-      // theirs to claim right now (their own customer, or a customer with
-      // no owning manager). Bundles reserved for a different manager stay
-      // silent for this manager until the assignment window elapses --
-      // see checkForManagerEscalations(), which fires later.
-      var mine = state.currentUser.role==='admin' ? newOnes : newOnes.filter(function(b){
-        return isBundleClaimableByManager(b, state.currentUser.username);
-      });
-      if(mine.length){
-        if(state.currentUser.role==='manager') playNotificationSound();
-        var b0 = mine[0];
-        state.notifiedBundleIds[b0.id] = true;
-        fireNotification('نوی بنډل راغی', b0.ntoUsername+' یو بنډل ('+b0.field2+') ولیږه.');
-        showToast('نوی بنډل راغی — '+b0.ntoUsername);
+      if(state.currentUser.role==='manager'){
+        playNotificationSound();
       }
-    }
-    scheduleAssignWindowRefresh();
-  }
-
-  // ---------------- notify a manager once an assignment window elapses and a
-  // bundle that wasn't theirs opens up to all managers ----------------
-  function checkForManagerEscalations(){
-    if(!state.currentUser || state.currentUser.role!=='manager') return;
-    var opened = state.bundles.filter(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return false;
-      if(state.notifiedBundleIds[b.id]) return false;
-      return isBundleClaimableByManager(b, state.currentUser.username);
-    });
-    if(opened.length){
-      playNotificationSound();
-      opened.forEach(function(b){ state.notifiedBundleIds[b.id] = true; });
-      var b0 = opened[0];
-      fireNotification('یو بنډل اوس تاسو ته هم خلاص دی', b0.ntoUsername+' — ('+b0.field2+')');
-      showToast('یو بنډل اوس ستاسو لپاره هم خلاص شو — '+b0.ntoUsername);
+      var b0 = newOnes[0];
+      fireNotification('نوی بنډل راغی', b0.ntoUsername+' یو بنډل ('+b0.field2+') ولیږه.');
+      showToast('نوی بنډل راغی — '+b0.ntoUsername);
     }
   }
 
@@ -2194,35 +1881,9 @@
   }
 
   // ---------------- PWA: register service worker ----------------
-  // Auto-update: whenever a newer sw.js/cache gets installed in the
-  // background, force a one-time reload so people actually get the new
-  // code instead of being stuck on a cached copy of index.html/app logic
-  // until they manually clear their browser cache.
   if('serviceWorker' in navigator){
-    var swReloaded = false;
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('sw.js').then(function(reg){
-        if(!reg) return;
-        reg.update().catch(function(){});
-        if(reg.waiting && navigator.serviceWorker.controller){
-          reg.waiting.postMessage && reg.waiting.postMessage('SKIP_WAITING');
-        }
-        reg.addEventListener('updatefound', function(){
-          var nw = reg.installing;
-          if(!nw) return;
-          nw.addEventListener('statechange', function(){
-            if(nw.state==='installed' && navigator.serviceWorker.controller && !swReloaded){
-              swReloaded = true;
-              window.location.reload();
-            }
-          });
-        });
-      }).catch(function(){ /* ignore */ });
-      if(navigator.serviceWorker.controller){
-        navigator.serviceWorker.addEventListener('controllerchange', function(){
-          if(!swReloaded){ swReloaded = true; window.location.reload(); }
-        });
-      }
+      navigator.serviceWorker.register('sw.js').catch(function(){ /* ignore */ });
     });
   }
 
@@ -2240,7 +1901,6 @@
     restoreSession();
     state.loading = false;
     attachListeners();
-    scheduleAssignWindowRefresh();
     render();
   });
 
