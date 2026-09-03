@@ -442,8 +442,7 @@
   // manager who created that customer's account, before it opens up to all
   // managers. This applies no matter what the bundle's current status is
   // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
-  // findAssignedManager().
-  var ASSIGN_WAIT_MS = 40*60*1000; // 40 minutes
+  // findAssignedManager().  var ASSIGN_WAIT_MS = 40000; // 40 seconds
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -654,7 +653,7 @@
   var MENUS = {
     admin:[
       {key:'managers', label:'مديران'},
-      {key:'ntos', label:'مشتريا'},
+      {key:'ntos', label:'مشتريان'},
       {key:'sales', label:'بنډلونه'},
       {key:'report', label:'راپور-مدير'},
       {key:'nto_report', label:'راپور-مشتري'},
@@ -662,12 +661,13 @@
       {key:'complaints', label:'شکایتونه'}
     ],
     manager:[
-      {key:'ntos', label:'مشتريا'},
+      {key:'ntos', label:'مشتريان'},
       {key:'sales', label:'بنډلونه'},
-      {key:'report', label:'فروشات'}
+      {key:'report', label:'فروشات'},
+      {key:'nto_report', label:'راپور-مشتري'}
     ],
     nto:[
-      {key:'bundle', label:'نوى بنډلل استول'},
+      {key:'bundle', label:'نوى بنډل استول'},
       {key:'deactivate', label:'بنډل غيري فعالول'},
       {key:'sales', label:'بنډلونه'},
       {key:'report', label:'فروشاتو راپور'},
@@ -958,7 +958,7 @@
     if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin', role);
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
-    if(state.section==='nto_report' && role==='admin') return renderNtoReportSection(body, headerRow);
+    if(state.section==='nto_report' && (role==='admin'||role==='manager')) return renderNtoReportSection(body, headerRow, role);
     if(state.section==='rolls' && role==='admin') return renderRollsSection(body);
     if(state.section==='complaints') return renderComplaintsSection(body, role);
 
@@ -1798,7 +1798,7 @@
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
-  function renderNtoReportSection(body, headerRow){
+  function renderNtoReportSection(body, headerRow, role){
     var ntoUsers = state.users.filter(function(u){return u.role==='nto';});
 
     if(headerRow){
@@ -1834,28 +1834,32 @@
       var s = ntoStats(u.username);
       return {username:u.username, count:s.count, total:s.total};
     });
+    // The reset ("ریسیټ") icon is admin-only -- managers can view this
+    // report but must not be able to clear anyone's numbers.
     body.innerHTML = '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
-      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th><th></th>'+
+      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th>'+(role==='admin' ? '<th></th>' : '')+
       '</tr></thead><tbody>'+
       rows.map(function(r){
         return '<tr><td data-label="مشتري">'+escapeHtml(r.username)+'</td><td data-label="فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
-          '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td></tr>';
+          (role==='admin' ? '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td>' : '')+'</tr>';
       }).join('')+
     '</tbody></table></div></div>';
 
-    Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
-      btn.onclick = function(){
-        var nu = btn.getAttribute('data-nto-reset');
-        var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
-        if(!ok) return;
-        state.ntoSales[nu] = {total:0, count:0};
-        var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
-        db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
-          showToast('د '+nu+' راپور پاک شو.');
-          renderSection(document.getElementById('main-area'));
-        });
-      };
-    });
+    if(role==='admin'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
+        btn.onclick = function(){
+          var nu = btn.getAttribute('data-nto-reset');
+          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
+          if(!ok) return;
+          state.ntoSales[nu] = {total:0, count:0};
+          var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
+          db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+            showToast('د '+nu+' راپور پاک شو.');
+            renderSection(document.getElementById('main-area'));
+          });
+        };
+      });
+    }
   }
 
   function renderReportSection(body, role, headerRow){
