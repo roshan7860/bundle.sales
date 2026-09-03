@@ -416,6 +416,7 @@
     ntoResetAt:{}, // { ntoUsername: timestamp }
     section:null,
     loading:true,
+    loadError:false,
     error:"",
     unsubs:null,
     modal:null, // {type:'process'|'resubmit', bundleId, previousStatus}
@@ -495,16 +496,24 @@
   }
 
   // ---------------- storage helpers (Firestore) ----------------
+  // sGetDoc reports whether the read actually succeeded (ok:true/false),
+  // separately from whether the document simply has no data yet.
+  // This distinction matters: a failed read (offline, network blip, etc.)
+  // must NEVER be treated the same as "no data exists" -- doing so is what
+  // caused ensureSeed() to wipe out every manager/NTO account whenever a
+  // Firestore read hiccuped (see ensureSeed below).
   function sGetDoc(name){
     return db.collection('appdata').doc(name).get().then(function(snap){
-      return (snap.exists && snap.data().list) ? snap.data().list : null;
-    }).catch(function(){ return null; });
+      return {ok:true, list:(snap.exists && snap.data().list) ? snap.data().list : null};
+    }).catch(function(err){
+      return {ok:false, list:null, err:err};
+    });
   }
   function sSetDoc(name, list){
     return db.collection('appdata').doc(name).set({list:list});
   }
   function loadJSON(key, fallback){
-    return sGetDoc(key).then(function(v){ return v || fallback; });
+    return sGetDoc(key).then(function(res){ return res.ok ? (res.list || fallback) : fallback; });
   }
   function saveJSON(key, obj){
     return sSetDoc(key, obj);
@@ -543,7 +552,15 @@
   var DEFAULT_ADMIN_PASS = 'Roshan.af.admin@af&786';
 
   function ensureSeed(){
-    return loadJSON('users', null).then(function(users){
+    return sGetDoc('users').then(function(res){
+      if(!res.ok){
+        // The read itself failed (offline/network/permission hiccup) --
+        // we do NOT know whether real accounts exist on the server, so we
+        // must not seed/overwrite anything here. Bubble this up as a
+        // rejection so loadAll() can retry instead of wiping real data.
+        return Promise.reject(res.err || new Error('users-read-failed'));
+      }
+      var users = res.list;
       if(users && users.length){
         state.users = users;
         var legacy = state.users.find(function(u){return u.username==='admin' && u.role==='admin';});
@@ -554,13 +571,15 @@
         }
         return;
       }
+      // The read succeeded AND the users doc is genuinely empty/missing --
+      // this only happens on the very first run, so it's safe to seed.
       var seeded = [{username:DEFAULT_ADMIN_USER, password:DEFAULT_ADMIN_PASS, role:'admin', status:'enabled', createdBy:'system'}];
       state.users = seeded;
       return saveJSON('users', seeded);
     });
   }
 
-  function loadAll(){
+  function loadAllOnce(){
     return Promise.all([
       ensureSeed(),
       loadJSON('bundles', []).then(function(v){ state.bundles = v; }),
@@ -571,6 +590,24 @@
         state.ntoResetAt = (snap.exists && snap.data().ntoResetAt) ? snap.data().ntoResetAt : {};
       }).catch(function(){ state.managerResetAt = {}; state.ntoResetAt = {}; })
     ]);
+  }
+
+  // Retries the initial load a few times (with a short delay) before giving
+  // up and showing an error screen. This protects against transient
+  // network/Firestore hiccups being mistaken for "no data exists yet".
+  function loadAll(retriesLeft){
+    if(retriesLeft===undefined) retriesLeft = 5;
+    return loadAllOnce().then(function(){
+      state.loadError = false;
+    }).catch(function(err){
+      if(retriesLeft<=0){
+        state.loadError = true;
+        return;
+      }
+      return new Promise(function(resolve){ setTimeout(resolve, 1500); }).then(function(){
+        return loadAll(retriesLeft-1);
+      });
+    });
   }
 
   function persistUsers(){ return saveJSON('users', state.users); }
@@ -610,6 +647,29 @@
     var root = document.getElementById('app');
     if(state.loading){
       root.innerHTML = '<div class="login-wrap"><div class="login-card"><p class="sub">بار کیږي...</p></div></div>';
+      renderModalLayer();
+      return;
+    }
+    if(state.loadError){
+      root.innerHTML =
+        '<div class="blocked-wrap"><div class="blocked-card">'+
+          '<div class="icon">&#9888;</div>'+
+          '<h3 style="direction:rtl;">له سرور سره وصل کیدل ونشول</h3>'+
+          '<p style="direction:rtl;">ستاسو انټرنېټ یا Firestore سره اړیکه ونشوه. مهرباني وکړئ خپل انټرنېټ وګورئ او بیا هڅه وکړئ. (د خوندیتوب لپاره، تر هغه چې اړیکه بیرته رغیږي، هیڅ معلومات به نه بدلیږي.)</p>'+
+          '<button class="btn btn-ghost" id="le-retry" style="margin-top:18px;">بیا هڅه</button>'+
+        '</div></div>';
+      var retryBtn = document.getElementById('le-retry');
+      if(retryBtn){
+        retryBtn.onclick = function(){
+          state.loading = true;
+          render();
+          loadAll().then(function(){
+            restoreSession();
+            state.loading = false;
+            render();
+          });
+        };
+      }
       renderModalLayer();
       return;
     }
@@ -1781,7 +1841,7 @@
     if(state.unsubs) return;
     state.unsubs = [];
     state.unsubs.push(db.collection('appdata').doc('users').onSnapshot(function(snap){
-      if(snap.exists && snap.data().list){ state.users = snap.data().list; render(); }
+      if(snap.exists && snap.data().list){ state.users = snap.data().list; state.loadError = false; render(); }
     }));
     state.unsubs.push(db.collection('appdata').doc('bundles').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){
