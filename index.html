@@ -2100,9 +2100,35 @@
   }
 
   // ---------------- PWA: register service worker ----------------
+  // Auto-update: whenever a newer sw.js/cache gets installed in the
+  // background, force a one-time reload so people actually get the new
+  // code instead of being stuck on a cached copy of index.html/app logic
+  // until they manually clear their browser cache.
   if('serviceWorker' in navigator){
+    var swReloaded = false;
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('sw.js').catch(function(){ /* ignore */ });
+      navigator.serviceWorker.register('sw.js').then(function(reg){
+        if(!reg) return;
+        reg.update().catch(function(){});
+        if(reg.waiting && navigator.serviceWorker.controller){
+          reg.waiting.postMessage && reg.waiting.postMessage('SKIP_WAITING');
+        }
+        reg.addEventListener('updatefound', function(){
+          var nw = reg.installing;
+          if(!nw) return;
+          nw.addEventListener('statechange', function(){
+            if(nw.state==='installed' && navigator.serviceWorker.controller && !swReloaded){
+              swReloaded = true;
+              window.location.reload();
+            }
+          });
+        });
+      }).catch(function(){ /* ignore */ });
+      if(navigator.serviceWorker.controller){
+        navigator.serviceWorker.addEventListener('controllerchange', function(){
+          if(!swReloaded){ swReloaded = true; window.location.reload(); }
+        });
+      }
     });
   }
 
