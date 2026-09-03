@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260903-03">
+<meta name="app-build-version" content="20260903-04">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1291,10 +1291,14 @@
         if(canProcess && (b.status==='pending' || b.status==='resubmit')){
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
         }else if(canProcess && b.status==='in_process'){
-          // Clickable too: lets another admin/manager take over a bundle that
-          // got stuck "in process" (e.g. the first manager closed the tab
-          // instead of pressing "لغوه کول") instead of it being locked forever.
-          statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي — کلیک وکړئ چې دنده واخلئ':'')+'">'+statusLabel(b.status)+'</span>';
+          // While a bundle is in process, NO manager may open/click it.
+          // It becomes clickable again only after it returns to pending/resubmit
+          // (for example when the current manager presses "لغوه کول").
+          if(role==='admin'){
+            statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي':'')+'">'+statusLabel(b.status)+'</span>';
+          }else{
+            statusCell = '<span class="badge '+badgeClass(b.status)+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې پروسس کوي':'')+'">'+statusLabel(b.status)+'</span>';
+          }
         }
         // For a manager, the full number (and its copy button) is only shown
         // once the bundle is approved ("فعاله شوو"). Every other status
@@ -1331,7 +1335,16 @@
 
     if(canProcess){
       Array.prototype.forEach.call(document.querySelectorAll('[data-open-process]'), function(el){
-        el.onclick = function(){ openProcessModal(el.getAttribute('data-open-process')); };
+        el.onclick = function(){
+          var bid = el.getAttribute('data-open-process');
+          var bb = state.bundles.find(function(x){return x.id===bid;});
+          // A manager must never be able to take over an in-process bundle.
+          if(role==='manager' && bb && bb.status==='in_process'){
+            showToast('دا بنډل اوس د '+(bb.processingBy||'بل مدیر')+' تر پروسس لاندې دی. تر هغه چې حالت بیا د انتظار حالت ته نه وي اوښتی، کلیک نه شي کېدای.');
+            return;
+          }
+          openProcessModal(bid);
+        };
       });
     }
     if(role==='nto'){
@@ -1478,7 +1491,11 @@
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
     if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
-    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit'||b.status==='in_process') && !isBundleClaimableByManager(b, state.currentUser.username)){
+    if(state.currentUser.role==='manager' && b.status==='in_process'){
+      showToast('دا بنډل اوس د '+(b.processingBy||'بل مدیر')+' تر پروسس لاندې دی. لومړی باید حالت بیا د انتظار حالت ته راوګرځي.');
+      return;
+    }
+    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit') && !isBundleClaimableByManager(b, state.currentUser.username)){
       var ownMgr = findAssignedManager(b.ntoUsername);
       showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
       return;
@@ -1961,7 +1978,7 @@
       '</tr></thead><tbody>'+
       rows.map(function(r){
         return '<tr><td data-label="مشتري">'+escapeHtml(r.username)+'</td><td data-label="فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
-          '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td></tr>';
+          (role==='admin' ? '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td>' : '')+'</tr>';
       }).join('')+
     '</tbody></table></div></div>';
 
