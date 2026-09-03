@@ -526,6 +526,23 @@
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
+  // ---------------- digit normalization (Pashto/Persian & Arabic-Indic numerals) ----------------
+  // Many phones default their keyboard to Pashto/Dari, which types numbers as
+  // ۰۱۲۳۴۵۶۷۸۹ (Extended Arabic-Indic, U+06F0-06F9) or ٠١٢٣٤٥٦٧٨٩ (Arabic-Indic,
+  // U+0660-0669) instead of plain 0-9. Every place in this app that reads a
+  // number (phone/reference numbers, and the amount typed inside a comment)
+  // must treat those the same as normal digits, or the value silently comes
+  // out as empty/zero.
+  function normalizeDigits(str){
+    if(str==null) return str;
+    return String(str).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function(ch){
+      var code = ch.charCodeAt(0);
+      if(code>=0x06F0 && code<=0x06F9) return String(code-0x06F0); // پښتو/دري ۰-۹
+      if(code>=0x0660 && code<=0x0669) return String(code-0x0660); // عربي ٠-٩
+      return ch;
+    });
+  }
+
   // ---------------- session persistence (stay logged in across refresh/close) ----------------
   var SESSION_KEY = 'roshanPortalSession';
   function saveSession(){
@@ -958,7 +975,7 @@
 
     var f1 = document.getElementById('bd-f1');
     f1.addEventListener('input', function(){
-      var v = f1.value.replace(/[^0-9]/g,'');
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1012,7 +1029,7 @@
 
     var f1 = document.getElementById('dz-f1');
     f1.addEventListener('input', function(){
-      var v = f1.value.replace(/[^0-9]/g,'');
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1683,9 +1700,10 @@
   // ---------------- REPORT SECTION ----------------
   function extractNumber(str){
     if(!str) return 0;
+    var normalized = normalizeDigits(str);
     // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
     // commas are still picked up as a single number instead of just "1".
-    var cleaned = String(str).replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+    var cleaned = normalized.replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
     var m = cleaned.match(/\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
   }
