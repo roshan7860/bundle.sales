@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260903-04">
+<meta name="app-build-version" content="20260903-05">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -675,6 +675,28 @@
     });
   }
 
+  function rebuildSalesTotalsOnce(){
+    var MIGRATION_VERSION = 2;
+    return db.collection('appdata').doc('salesTotals').get().then(function(snap){
+      var data=snap.exists?(snap.data()||{}):{};
+      if(data.salesRebuildVersion===MIGRATION_VERSION) return;
+      var mt={}, nt={};
+      state.bundles.forEach(function(b){
+        if(b.status!=='approved') return;
+        var amt=extractNumber(b.comment||'');
+        var n=b.ntoUsername;
+        if(n){if(!nt[n])nt[n]={total:0,count:0}; nt[n].total+=amt; nt[n].count++;}
+        var m=null;
+        if(b.actionedBy){var au=state.users.find(function(u){return u.username===b.actionedBy&&u.role==='manager';}); if(au)m=au.username;}
+        if(!m)m=findAssignedManager(n);
+        if(!m&&b.processingBy){var pu=state.users.find(function(u){return u.username===b.processingBy&&u.role==='manager';});if(pu)m=pu.username;}
+        if(m){if(!mt[m])mt[m]={total:0,count:0};mt[m].total+=amt;mt[m].count++;}
+      });
+      state.managerSales=mt; state.ntoSales=nt;
+      return db.collection('appdata').doc('salesTotals').set({managerSales:mt,ntoSales:nt,salesRebuildVersion:MIGRATION_VERSION},{merge:true});
+    });
+  }
+
   function loadAllOnce(){
     return Promise.all([
       ensureSeed(),
@@ -690,7 +712,7 @@
         state.managerSales = (res.data && res.data.managerSales) ? res.data.managerSales : {};
         state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
       })
-    ]);
+    ]).then(function(){ return rebuildSalesTotalsOnce(); });
   }
 
   // Retries the initial load a few times (with a short delay) before giving
@@ -1564,7 +1586,9 @@
       // own document, completely independent of the bundles table, so
       // clearing/deleting bundle rows later can never zero out a real report.
       var amt = extractNumber(comment);
-      var mgrUser = state.currentUser.username;
+      var mgrUser = state.currentUser.role==='manager' ? state.currentUser.username : findAssignedManager(b.ntoUsername);
+      if(!mgrUser && b.processingBy){ var pu=state.users.find(function(u){return u.username===b.processingBy && u.role==='manager';}); if(pu) mgrUser=pu.username; }
+      if(!mgrUser) mgrUser=state.currentUser.username;
       if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
       state.managerSales[mgrUser].total += amt;
       state.managerSales[mgrUser].count += 1;
