@@ -288,6 +288,10 @@
     position:absolute;top:14px;left:14px;
   }
   .modal-card{position:relative;}
+  .proc-number-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;}
+  .proc-number-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .proc-number{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:.3px;}
+  .proc-bundle-name{font-size:13px;color:var(--ink-soft);margin-top:6px;}
 
   /* ---------- Top bar with hamburger toggle (shown on every screen size) ---------- */
   .mobile-topbar{
@@ -436,8 +440,10 @@
   var PAGE_SIZE = 20;
   // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
   // manager who created that customer's account, before it opens up to all
-  // managers. See isBundleClaimableByManager() / findAssignedManager().
-  var ASSIGN_WAIT_MS = 40000;
+  // managers. This applies no matter what the bundle's current status is
+  // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
+  // findAssignedManager().
+  var ASSIGN_WAIT_MS = 40*60*1000; // 40 minutes
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -525,6 +531,23 @@
     return sSetDoc(key, obj);
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+  // ---------------- digit normalization (Pashto/Persian & Arabic-Indic numerals) ----------------
+  // Many phones default their keyboard to Pashto/Dari, which types numbers as
+  // ۰۱۲۳۴۵۶۷۸۹ (Extended Arabic-Indic, U+06F0-06F9) or ٠١٢٣٤٥٦٧٨٩ (Arabic-Indic,
+  // U+0660-0669) instead of plain 0-9. Every place in this app that reads a
+  // number (phone/reference numbers, and the amount typed inside a comment)
+  // must treat those the same as normal digits, or the value silently comes
+  // out as empty/zero.
+  function normalizeDigits(str){
+    if(str==null) return str;
+    return String(str).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function(ch){
+      var code = ch.charCodeAt(0);
+      if(code>=0x06F0 && code<=0x06F9) return String(code-0x06F0); // پښتو/دري ۰-۹
+      if(code>=0x0660 && code<=0x0669) return String(code-0x0660); // عربي ٠-٩
+      return ch;
+    });
+  }
 
   // ---------------- session persistence (stay logged in across refresh/close) ----------------
   var SESSION_KEY = 'roshanPortalSession';
@@ -958,7 +981,7 @@
 
     var f1 = document.getElementById('bd-f1');
     f1.addEventListener('input', function(){
-      var v = f1.value.replace(/[^0-9]/g,'');
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1012,7 +1035,7 @@
 
     var f1 = document.getElementById('dz-f1');
     f1.addEventListener('input', function(){
-      var v = f1.value.replace(/[^0-9]/g,'');
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1062,11 +1085,21 @@
       // elapses or it becomes theirs. Everything else (already
       // approved/rejected/etc., or unassigned customers) stays visible.
       allRows = allRows.filter(function(b){
-        if(b.status!=='pending' && b.status!=='resubmit') return true;
+        if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
         return isBundleClaimableByManager(b, state.currentUser.username);
       });
     }
     var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
+    // Resubmitted bundles are pinned to the very top of the list for every
+    // role (admin/manager/nto), most-recently-resubmitted first. Everything
+    // else keeps its existing relative order (Array#sort is stable).
+    rows = rows.slice().sort(function(a,b){
+      var ar = a.status==='resubmit' ? 1 : 0;
+      var br = b.status==='resubmit' ? 1 : 0;
+      if(ar!==br) return br-ar;
+      if(ar===1 && br===1) return (b.waitStartAt||b.createdAt||0) - (a.waitStartAt||a.createdAt||0);
+      return 0;
+    });
     var canProcess = (role==='admin' || role==='manager');
 
     if(headerRow && (role==='admin' || role==='manager')){
@@ -1146,15 +1179,29 @@
           // instead of pressing "لغوه کول") instead of it being locked forever.
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي — کلیک وکړئ چې دنده واخلئ':'')+'">'+statusLabel(b.status)+'</span>';
         }
+        // For a manager, the full number (and its copy button) is only shown
+        // once the bundle is approved ("فعاله شوو"). Every other status
+        // masks the last 3 digits and hides the copy button. Admin always
+        // sees the full number/button as before.
+        var maskForManager = (role==='manager' && b.status!=='approved');
+        var numberDisplay = maskForManager ? maskLast3Digits(b.field1) : escapeHtml(b.field1);
+        var copyBtn = (role==='manager' && !maskForManager) ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '';
+        // Resubmitted rows show the resubmit date/time instead of the
+        // original submission date/time.
+        var dateVal = (b.status==='resubmit' && b.waitStartAt) ? b.waitStartAt : b.createdAt;
+        var dateCell = fmtDateHtml(dateVal);
+        if(role==='admin'){
+          dateCell = '<button class="icon-btn-sm" data-delete-bundle="'+b.id+'" title="ړنګول" style="margin-left:6px;">&#128465;</button>'+dateCell;
+        }
         return '<tr>'+
           (role!=='nto' ? '<td data-label="مشتري-نوم">'+escapeHtml(b.ntoUsername)+'</td>' : '')+
-          '<td data-label="اړيکې-شمیره">'+escapeHtml(b.field1)+(role==='manager' ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '')+'</td>'+
+          '<td data-label="اړيکې-شمیره">'+numberDisplay+copyBtn+'</td>'+
           '<td data-label="بنډل-نوو">'+escapeHtml(b.field2)+'</td>'+
           '<td data-label="حالت">'+statusCell+'</td>'+
           (canProcess ? '<td data-label="تائيد کوونکى-مدير">'+(b.actionedBy?escapeHtml(b.actionedBy):'—')+'</td>' : '')+
           '<td data-label="يادونه-شوې">'+(b.comment?escapeHtml(b.comment):'—')+'</td>'+
-          '<td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td>'+
-          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">ریسبمیټ</button>' : '')+'</td>' : '')+
+          '<td data-label="نیټه">'+dateCell+'</td>'+
+          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">بیا ځلې لیږل</button>' : '')+'</td>' : '')+
         '</tr>';
       }).join('')+
     '</tbody></table></div><div id="bundle-pager"></div></div>';
@@ -1183,6 +1230,14 @@
         };
       });
     }
+    if(role==='admin'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-delete-bundle]'), function(btn){
+        btn.onclick = function(e){
+          e.stopPropagation();
+          deleteBundleById(btn.getAttribute('data-delete-bundle'));
+        };
+      });
+    }
   }
 
   function copyToClipboard(text){
@@ -1204,6 +1259,30 @@
     }else{
       fail();
     }
+  }
+
+  // Masks everything except the last 3 characters of a number with '***'
+  // (used to hide a customer's number from a manager until it's approved).
+  function maskLast3Digits(str){
+    str = String(str==null?'':str);
+    if(str.length<=3) return '***';
+    return escapeHtml(str.slice(0,-3))+'***';
+  }
+
+  // ---------------- ADMIN: delete a single bundle everywhere ----------------
+  // Asks for confirmation, then removes just this one bundle from the shared
+  // bundles table -- since every role reads the same table, this removes it
+  // for all users (admin/manager/nto) at once.
+  function deleteBundleById(bundleId){
+    var b = state.bundles.find(function(x){return x.id===bundleId;});
+    if(!b) return;
+    var ok = window.confirm('آیا تاسو ډاډه یاست چې غواړئ دا بنډل ړنګ کړئ؟ دا کار به دا بنډل د ټولو یوزرانو لپاره ړنګ کړي او بیرته نشي کیدلی.');
+    if(!ok) return;
+    state.bundles = state.bundles.filter(function(x){return x.id!==bundleId;});
+    persistBundles().then(function(){
+      showToast('بنډل ړنګ شو.');
+      renderDashboard(document.getElementById('app'));
+    });
   }
 
   function badgeClass(status){
@@ -1244,7 +1323,9 @@
     return creator ? creator.username : null;
   }
   function isBundleClaimableByManager(b, managerUsername){
-    if(b.status!=='pending' && b.status!=='resubmit') return true; // in_process/etc: existing take-over rules apply
+    // Approved/rejected/deactivated bundles are already decided -- no more
+    // contention over who may act on them, so always visible/claimable.
+    if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
     var assignedMgr = findAssignedManager(b.ntoUsername);
     if(!assignedMgr) return true; // customer has no owning manager (e.g. created by admin) -- open to all immediately
     var startedAt = b.waitStartAt || b.createdAt || 0;
@@ -1260,7 +1341,7 @@
     var now = Date.now();
     var soonest = null;
     state.bundles.forEach(function(b){
-      if(b.status!=='pending' && b.status!=='resubmit') return;
+      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return;
       if(isBundleClaimableByManager(b, state.currentUser.username)) return;
       var startedAt = b.waitStartAt || b.createdAt || 0;
       var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
@@ -1280,7 +1361,7 @@
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
     if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
-    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit') && !isBundleClaimableByManager(b, state.currentUser.username)){
+    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit'||b.status==='in_process') && !isBundleClaimableByManager(b, state.currentUser.username)){
       var ownMgr = findAssignedManager(b.ntoUsername);
       showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
       return;
@@ -1495,9 +1576,17 @@
           '<button class="btn btn-ghost btn-block" id="pw-cancel" style="margin-top:10px;">لغوه کول</button>'+
         '</div>';
     }else if(state.modal.type==='process'){
+      var procB = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
       layer.innerHTML =
         '<div class="modal-card">'+
           '<h3>د بنډل پروسس کول</h3>'+
+          '<div class="proc-number-box">'+
+            '<div class="proc-number-row">'+
+              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
+              '<button class="icon-btn-copy" id="proc-copy-number" title="کاپي کول">&#128203;</button>'+
+            '</div>'+
+            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
+          '</div>'+
           '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px 0;">'+
             '<button class="btn btn-sm btn-ghost" id="proc-quick-1">پیسې اضافه کړه</button>'+
@@ -1555,6 +1644,10 @@
       document.getElementById('proc-quick-1').onclick = function(){ confirmQuickReject('پیسې اضافه کړه'); };
       document.getElementById('proc-quick-2').onclick = function(){ confirmQuickReject('پیسې کمې دي'); };
       document.getElementById('proc-quick-3').onclick = function(){ confirmQuickReject('شمیره غلطه ده'); };
+      (function(){
+        var copyBtn = document.getElementById('proc-copy-number');
+        if(copyBtn){ copyBtn.onclick = function(){ var pb = state.bundles.find(function(x){return x.id===state.modal.bundleId;}); if(pb) copyToClipboard(pb.field1); }; }
+      })();
     }else if(state.modal.type==='deactivate-confirm'){
       document.getElementById('deact-confirm').onclick = submitDeactivate;
       document.getElementById('deact-cancel').onclick = closeProcessModal;
@@ -1683,9 +1776,10 @@
   // ---------------- REPORT SECTION ----------------
   function extractNumber(str){
     if(!str) return 0;
+    var normalized = normalizeDigits(str);
     // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
     // commas are still picked up as a single number instead of just "1".
-    var cleaned = String(str).replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+    var cleaned = normalized.replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
     var m = cleaned.match(/\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
   }
@@ -2037,7 +2131,7 @@
   function checkForManagerEscalations(){
     if(!state.currentUser || state.currentUser.role!=='manager') return;
     var opened = state.bundles.filter(function(b){
-      if(b.status!=='pending' && b.status!=='resubmit') return false;
+      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return false;
       if(state.notifiedBundleIds[b.id]) return false;
       return isBundleClaimableByManager(b, state.currentUser.username);
     });
