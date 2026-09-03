@@ -6,6 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
+<meta name="app-build-version" content="20260903-02">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -443,7 +444,7 @@
   // managers. This applies no matter what the bundle's current status is
   // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
   // findAssignedManager().
-  var ASSIGN_WAIT_MS = 40*60*1000; // 40 minutes
+  var ASSIGN_WAIT_MS = 40*1000; // 40 seconds
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -551,11 +552,13 @@
 
   // ---------------- session persistence (stay logged in across refresh/close) ----------------
   var SESSION_KEY = 'roshanPortalSession';
+  var APP_BUILD_VERSION = document.querySelector('meta[name="app-build-version"]') ? document.querySelector('meta[name="app-build-version"]').getAttribute('content') : '1';
   function saveSession(){
     try{
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         username: state.currentUser.username,
-        sessionToken: state.mySessionToken || null
+        sessionToken: state.mySessionToken || null,
+        buildVersion: APP_BUILD_VERSION
       }));
     }catch(e){}
   }
@@ -569,6 +572,9 @@
     var saved;
     try{ saved = JSON.parse(raw); }catch(e){ return; }
     if(!saved || !saved.username) return;
+    // Force a fresh login after a deployed code version changes. This prevents
+    // an old authenticated session from continuing with stale role/UI logic.
+    if(saved.buildVersion !== APP_BUILD_VERSION){ clearSavedSession(); return; }
     var u = state.users.find(function(x){ return x.username===saved.username; });
     if(!u || u.status==='disabled'){ clearSavedSession(); return; }
     state.currentUser = {username:u.username, role:u.role};
@@ -664,7 +670,8 @@
     manager:[
       {key:'ntos', label:'مشتريان'},
       {key:'sales', label:'بنډلونه'},
-      {key:'report', label:'فروشات'}
+      {key:'report', label:'فروشات'},
+      {key:'nto_report', label:'راپور-مشتري'}
     ],
     nto:[
       {key:'bundle', label:'نوى بنډل استول'},
@@ -946,6 +953,55 @@
     return map[key] || '';
   }
 
+  // ---------------- ADMIN: DOWNLOAD ANY PAGE AS EXCEL ----------------
+  // Adds a download icon to admin-only pages that do not already have one.
+  function addAdminPageExport(headerRow, section){
+    if(!headerRow || !state.currentUser || state.currentUser.role!=='admin') return;
+    if(headerRow.querySelector('[data-admin-page-export]')) return;
+    var wrap = headerRow.querySelector('.header-actions');
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.className = 'header-actions';
+      headerRow.appendChild(wrap);
+    }
+    var btn = document.createElement('button');
+    btn.className = 'icon-btn';
+    btn.setAttribute('data-admin-page-export','1');
+    btn.title = 'اکسیل ډاونلوډ';
+    btn.innerHTML = '&#128190;';
+    wrap.appendChild(btn);
+    btn.onclick = function(){ exportAdminSection(section); };
+  }
+
+  function exportAdminSection(section){
+    var data = [];
+    var sheet = section;
+    if(section==='managers'){
+      data = state.users.filter(function(u){return u.role==='manager';}).map(function(u){
+        return {'یوزر-نوم':u.username,'حالت':u.status==='enabled'?'فعال':'غیر فعال'};
+      });
+      sheet='Managers';
+    }else if(section==='ntos'){
+      data = state.users.filter(function(u){return u.role==='nto';}).map(function(u){
+        return {'یوزر-نوم':u.username,'ادرس':u.address||'','اړیکې شمیره':u.contact||'','جوړونکی':u.createdBy||'','حالت':u.status==='enabled'?'فعال':'غیر فعال'};
+      });
+      sheet='Customers';
+    }else if(section==='rolls'){
+      data = state.rolls.map(function(r){ return {'پیغام':r.text,'جوړونکی':r.createdBy||'','نیټه':fmtDate(r.createdAt)}; });
+      sheet='Messages';
+    }else if(section==='complaints'){
+      data = state.complaints.map(function(c){ return {'مشتري':c.fromUsername||'','شکایت':c.text||'','نیټه':fmtDate(c.createdAt)}; });
+      sheet='Complaints';
+    }else return;
+    if(!data.length){ showToast('هیڅ معلومات نشته چې ډاونلوډ شي.'); return; }
+    try{
+      var ws = XLSX.utils.json_to_sheet(data);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheet);
+      XLSX.writeFile(wb, section+'-'+Date.now()+'.xlsx');
+    }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
+  }
+
   function renderSection(main){
     var role = state.currentUser.role;
     main.innerHTML = '<div class="main-header" id="main-header-row"><div><h2>'+sectionTitle(state.section)+'</h2></div></div><div id="sec-body"></div>';
@@ -954,13 +1010,13 @@
 
     if(state.section==='bundle' && role==='nto') return renderBundleSection(body);
     if(state.section==='deactivate' && role==='nto') return renderDeactivateSection(body);
-    if(state.section==='managers' && role==='admin') return renderUsersSection(body, 'manager', true, true, role);
-    if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin', role);
+    if(state.section==='managers' && role==='admin'){ renderUsersSection(body, 'manager', true, true, role); if(role==='admin') addAdminPageExport(headerRow, 'managers'); return; }
+    if(state.section==='ntos' && (role==='admin'||role==='manager')){ renderUsersSection(body, 'nto', role==='admin', role==='admin', role); if(role==='admin') addAdminPageExport(headerRow, 'ntos'); return; }
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
-    if(state.section==='nto_report' && role==='admin') return renderNtoReportSection(body, headerRow);
-    if(state.section==='rolls' && role==='admin') return renderRollsSection(body);
-    if(state.section==='complaints') return renderComplaintsSection(body, role);
+    if(state.section==='nto_report' && (role==='admin'||role==='manager')) return renderNtoReportSection(body, headerRow, role);
+    if(state.section==='rolls' && role==='admin'){ renderRollsSection(body); addAdminPageExport(headerRow, 'rolls'); return; }
+    if(state.section==='complaints') { renderComplaintsSection(body, role); if(role==='admin') addAdminPageExport(headerRow, 'complaints'); return; }
 
     body.innerHTML = '<div class="empty-state">لاسرسی نشته.</div>';
   }
@@ -1798,8 +1854,13 @@
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
-  function renderNtoReportSection(body, headerRow){
-    var ntoUsers = state.users.filter(function(u){return u.role==='nto';});
+  function renderNtoReportSection(body, headerRow, role){
+    role = role || 'admin';
+    var ntoUsers = state.users.filter(function(u){
+      if(u.role!=='nto') return false;
+      if(role==='manager') return u.createdBy===state.currentUser.username;
+      return true;
+    });
 
     if(headerRow){
       headerRow.innerHTML =
@@ -1835,7 +1896,7 @@
       return {username:u.username, count:s.count, total:s.total};
     });
     body.innerHTML = '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
-      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th><th></th>'+
+      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th>'+(role==='admin'?'<th></th>':'')+
       '</tr></thead><tbody>'+
       rows.map(function(r){
         return '<tr><td data-label="مشتري">'+escapeHtml(r.username)+'</td><td data-label="فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
@@ -1843,6 +1904,7 @@
       }).join('')+
     '</tbody></table></div></div>';
 
+    if(role!=='admin') return;
     Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
       btn.onclick = function(){
         var nu = btn.getAttribute('data-nto-reset');
@@ -2226,6 +2288,31 @@
     });
   }
 
+  // ---------------- AUTO LOGOUT ON NEW DEPLOYMENT ----------------
+  // The current HTML contains a build version. Every 30 seconds, compare it
+  // with a fresh copy of the page. If a newer version is deployed, log out,
+  // clear the old session and reload so the user gets the new code.
+  var versionCheckTimer = null;
+  function startVersionCheck(){
+    if(versionCheckTimer) clearInterval(versionCheckTimer);
+    versionCheckTimer = setInterval(function(){
+      if(!state.currentUser) return;
+      var url = window.location.href.split('#')[0];
+      url += (url.indexOf('?')>=0?'&':'?')+'__appv='+Date.now();
+      fetch(url, {cache:'no-store', credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(html){
+        var m = html.match(/<meta[^>]+name=["']app-build-version["'][^>]+content=["']([^"']+)["'][^>]*>/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']app-build-version["'][^>]*>/i);
+        if(m && m[1] && m[1]!==APP_BUILD_VERSION){
+          clearSavedSession();
+          state.currentUser = null;
+          state.mySessionToken = null;
+          showToast('نوی بدلون راغلی، مهرباني وکړئ بیا داخل شئ.');
+          setTimeout(function(){ window.location.reload(); }, 700);
+        }
+      }).catch(function(){});
+    }, 30000);
+  }
+
   // ---------------- close the top-bar user dropdown when clicking elsewhere ----------------
   document.addEventListener('click', function(e){
     if(!state.userMenuOpen) return;
@@ -2242,6 +2329,7 @@
     attachListeners();
     scheduleAssignWindowRefresh();
     render();
+    startVersionCheck();
   });
 
 })();
