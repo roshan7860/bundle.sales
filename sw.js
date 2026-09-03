@@ -7,7 +7,7 @@
 //
 // How it works:
 //  1. CACHE_VERSION below is the only thing that has to change on a deploy.
-//     Bump it (e.g. 'v3' -> 'v4') every time you upload a new index.html.
+//     Bump it (e.g. 'v4' -> 'v5') every time you upload a new index.html.
 //     That alone makes the browser see this file as "changed", which is
 //     what makes it check for updates at all.
 //  2. self.skipWaiting() during install + the SKIP_WAITING message handler
