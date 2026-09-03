@@ -799,7 +799,11 @@
       state.section = menu[0].key;
     }
 
-    var actionableCount = state.bundles.filter(function(b){return b.status==='pending' || b.status==='resubmit';}).length;
+    var actionableCount = state.bundles.filter(function(b){
+      if(b.status!=='pending' && b.status!=='resubmit') return false;
+      if(role==='manager') return isBundleClaimableByManager(b, state.currentUser.username);
+      return true;
+    }).length;
     var myUnseen = state.bundles.filter(function(b){
       return b.ntoUsername===state.currentUser.username && (b.status==='approved'||b.status==='rejected') && !b.ntoSeen;
     }).length;
@@ -1051,6 +1055,17 @@
   function renderSalesSection(body, role, headerRow){
     if(role==='manager') scheduleAssignWindowRefresh();
     var allRows = role==='nto' ? state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username;}) : state.bundles.slice();
+    if(role==='manager'){
+      // A bundle that's still within its assignment window and belongs to a
+      // different manager's customer is completely hidden from this
+      // manager's bundle page -- not just non-clickable -- until the window
+      // elapses or it becomes theirs. Everything else (already
+      // approved/rejected/etc., or unassigned customers) stays visible.
+      allRows = allRows.filter(function(b){
+        if(b.status!=='pending' && b.status!=='resubmit') return true;
+        return isBundleClaimableByManager(b, state.currentUser.username);
+      });
+    }
     var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
     var canProcess = (role==='admin' || role==='manager');
 
@@ -1123,14 +1138,8 @@
       '</tr></thead><tbody>'+
       pageRows.map(function(b){
         var statusCell = statusBadge(b.status);
-        var claimableNow = role==='manager' ? isBundleClaimableByManager(b, state.currentUser.username) : true;
-        if(canProcess && (b.status==='pending' || b.status==='resubmit') && claimableNow){
+        if(canProcess && (b.status==='pending' || b.status==='resubmit')){
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
-        }else if(canProcess && (b.status==='pending' || b.status==='resubmit') && !claimableNow){
-          // Reserved for the customer's own manager during the assignment
-          // window -- visible, but not clickable by other managers yet.
-          var ownMgr = findAssignedManager(b.ntoUsername);
-          statusCell = '<span class="badge '+badgeClass(b.status)+'" title="لومړی '+escapeHtml(ownMgr||'')+' ته وروسپارل شوی">'+statusLabel(b.status)+'</span>';
         }else if(canProcess && b.status==='in_process'){
           // Clickable too: lets another admin/manager take over a bundle that
           // got stuck "in process" (e.g. the first manager closed the tab
@@ -1348,7 +1357,19 @@
       if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
       state.ntoSales[ntoUser].total += amt;
       state.ntoSales[ntoUser].count += 1;
-      saves.push(persistSalesTotals());
+      // Use atomic field increments instead of persistSalesTotals()'s full
+      // read-modify-write: two managers approving bundles at nearly the same
+      // moment could otherwise each overwrite the whole salesTotals document
+      // with their own slightly-stale local copy and silently erase the
+      // other's amount. Increments applied directly on the server can't be
+      // lost that way, and set(...,{merge:true}) also creates the document
+      // and any missing nested fields on the very first approval.
+      var incUpdate = {};
+      incUpdate['managerSales.'+mgrUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['managerSales.'+mgrUser+'.count'] = firebase.firestore.FieldValue.increment(1);
+      incUpdate['ntoSales.'+ntoUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['ntoSales.'+ntoUser+'.count'] = firebase.firestore.FieldValue.increment(1);
+      saves.push(db.collection('appdata').doc('salesTotals').set(incUpdate, {merge:true}));
     }
     Promise.all(saves).then(function(){
       showToast(decision==='approved' ? 'بنډل فعاله شو.' : 'بنډل رد شو.');
@@ -1734,7 +1755,8 @@
         var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
         if(!ok) return;
         state.ntoSales[nu] = {total:0, count:0};
-        persistSalesTotals().then(function(){
+        var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
+        db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
           showToast('د '+nu+' راپور پاک شو.');
           renderSection(document.getElementById('main-area'));
         });
@@ -1793,7 +1815,8 @@
             var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
             if(!ok) return;
             state.managerSales[mgr] = {total:0, count:0};
-            persistSalesTotals().then(function(){
+            var resetObj = {}; resetObj['managerSales.'+mgr] = {total:0, count:0};
+            db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
               showToast('د '+mgr+' راپور پاک شو.');
               renderSection(document.getElementById('main-area'));
             });
