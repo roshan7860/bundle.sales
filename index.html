@@ -14,6 +14,9 @@
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#EEF1F4;
@@ -285,10 +288,6 @@
     position:absolute;top:14px;left:14px;
   }
   .modal-card{position:relative;}
-  .proc-number-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;}
-  .proc-number-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-  .proc-number{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:.3px;}
-  .proc-bundle-name{font-size:13px;color:var(--ink-soft);margin-top:6px;}
 
   /* ---------- Top bar with hamburger toggle (shown on every screen size) ---------- */
   .mobile-topbar{
@@ -390,124 +389,9 @@
 </style>
 </head>
 <body>
-<div id="app">
-  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#EEF1F4;color:#5B6675;font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;font-size:15px;text-align:center;padding:24px;direction:rtl;">
-    سیستم نوی کیږي، لږ صبر وکړئ...
-  </div>
-</div>
+<div id="app"></div>
 <script>
-// Catches any error that fires before the app's own render() ever runs,
-// so a phone shows a readable message instead of a permanent blank white
-// page. Once render() successfully draws the real UI it overwrites this
-// placeholder, so this handler naturally stops mattering after that point.
-window.addEventListener('error', function(e){
-  var appEl = document.getElementById('app');
-  if(!appEl || appEl.getAttribute('data-app-rendered')==='1') return;
-  var msg = (e && (e.message || (e.error && e.error.message))) || 'ناڅاپي تېروتنه';
-  appEl.innerHTML =
-    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#EEF1F4;color:#B3432B;font-family:Tahoma,sans-serif;font-size:14px;text-align:center;padding:24px;direction:rtl;">'+
-      '<div style="font-weight:700;margin-bottom:10px;">د پاڼې د بارېدو ستونزه</div>'+
-      '<div style="color:#5B6675;margin-bottom:16px;max-width:420px;word-break:break-word;">'+msg+'</div>'+
-      '<button onclick="location.reload()" style="padding:10px 22px;border-radius:8px;border:none;background:#B8862B;color:#fff;font-size:14px;cursor:pointer;">بیا هڅه وکړئ</button>'+
-    '</div>';
-});
-// Dynamically loads a <script src> with a hard timeout, instead of the old
-// blocking <script src="..."> tags in <head>. Those blocked ALL rendering
-// -- including the loading placeholder above and this very error handler
-// -- until they finished, and on some mobile carriers/networks a request to
-// gstatic.com or cdnjs.cloudflare.com can just hang forever with no error,
-// which is what produced the permanent "loading..." screen on mobile while
-// desktop (different network) worked fine. Loading them this way lets the
-// placeholder show immediately and lets us show a real retry option if the
-// network genuinely can't reach them.
-function loadScriptWithTimeout(src, timeoutMs, cb){
-  var done = false;
-  var timer = setTimeout(function(){
-    if(done) return;
-    done = true;
-    cb(new Error('timeout loading '+src));
-  }, timeoutMs);
-  var el = document.createElement('script');
-  el.src = src;
-  el.onload = function(){
-    if(done) return;
-    done = true;
-    clearTimeout(timer);
-    cb(null);
-  };
-  el.onerror = function(){
-    if(done) return;
-    done = true;
-    clearTimeout(timer);
-    cb(new Error('failed to load '+src));
-  };
-  document.head.appendChild(el);
-}
-
-// Firebase CDN fallback for mobile browsers that cannot reach gstatic.
-function loadFirebaseCompat(fileName, cb){
-  var urls = [
-    'https://www.gstatic.com/firebasejs/10.13.2/'+fileName,
-    'https://cdn.jsdelivr.net/npm/firebase@10.13.2/'+fileName
-  ];
-  function attempt(i){
-    if(i>=urls.length){ cb(new Error('Firebase CDN unavailable')); return; }
-    loadScriptWithTimeout(urls[i], 8000, function(err){
-      if(!err){ cb(null); return; }
-      attempt(i+1);
-    });
-  }
-  attempt(0);
-}
-
-function showBootError(title, detail){
-  var appEl = document.getElementById('app');
-  if(!appEl) return;
-  appEl.innerHTML =
-    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#EEF1F4;color:#B3432B;font-family:Tahoma,sans-serif;font-size:14px;text-align:center;padding:24px;direction:rtl;">'+
-      '<div style="font-weight:700;margin-bottom:10px;">'+title+'</div>'+
-      '<div style="color:#5B6675;margin-bottom:16px;max-width:420px;word-break:break-word;">'+detail+'</div>'+
-      '<button onclick="location.reload()" style="padding:10px 22px;border-radius:8px;border:none;background:#B8862B;color:#fff;font-size:14px;cursor:pointer;">بیا هڅه وکړئ</button>'+
-    '</div>';
-}
-
-// Loads the xlsx library on first use only (the "export to Excel" buttons),
-// not at startup -- keeps the app usable even if this particular CDN is
-// slow/blocked, since exporting is optional and everything else still works.
-var xlsxLoaded = false, xlsxLoading = false, xlsxCallbacks = [];
-function ensureXLSX(cb){
-  if(xlsxLoaded){ cb(null); return; }
-  xlsxCallbacks.push(cb);
-  if(xlsxLoading) return;
-  xlsxLoading = true;
-  loadScriptWithTimeout('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 15000, function(err){
-    xlsxLoading = false;
-    if(!err) xlsxLoaded = true;
-    var cbs = xlsxCallbacks; xlsxCallbacks = [];
-    cbs.forEach(function(fn){ fn(err); });
-  });
-}
-
-// Load the two Firebase compat scripts in order (firestore-compat extends
-// the global that app-compat creates, so it must load second), each with
-// its own 15s timeout, then start the app. xlsx is NOT loaded here -- it's
-// only needed for the "export to Excel" buttons, so it's loaded lazily on
-// first use instead (see ensureXLSX below) to keep the initial load light.
-loadFirebaseCompat('firebase-app-compat.js', function(err1){
-  if(err1){
-    showBootError('د شبکې ستونزه', 'اړین فایل (Firebase) لوډ نشو. ممکن ستاسو د موبایل انټرنټ دا سایټ بندوي -- که کولی شئ WiFi یا بل سیم آزمویئ، بیا هڅه وکړئ.');
-    return;
-  }
-  loadFirebaseCompat('firebase-firestore-compat.js', function(err2){
-    if(err2){
-      showBootError('د شبکې ستونزه', 'اړین فایل (Firestore) لوډ نشو. ممکن ستاسو د موبایل انټرنټ دا سایټ بندوي -- که کولی شئ WiFi یا بل سیم آزمویئ، بیا هڅه وکړئ.');
-      return;
-    }
-    startApp();
-  });
-});
-
-function startApp(){
+(function(){
   "use strict";
 
   // ====== FIREBASE CONFIG ======
@@ -519,19 +403,6 @@ function startApp(){
     messagingSenderId: "314049949289",
     appId: "1:314049949289:web:889ca48f03540261f5fcf8"
   };
-  // Belt-and-suspenders only: startApp() is now only ever called after the
-  // loader above has confirmed firebase actually loaded, so this should
-  // never trigger -- kept as a last-resort safety net.
-  if(typeof firebase === 'undefined'){
-    document.getElementById('app').innerHTML =
-      '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#EEF1F4;color:#B3432B;font-family:Tahoma,sans-serif;font-size:14px;text-align:center;padding:24px;direction:rtl;">'+
-        '<div style="font-weight:700;margin-bottom:10px;">د شبکې ستونزه</div>'+
-        '<div style="color:#5B6675;margin-bottom:16px;max-width:420px;">اړین سکرېپټونه لوډ نشول. خپل انټرنټ کنکشن وګورئ او بیا هڅه وکړئ.</div>'+
-        '<button onclick="location.reload()" style="padding:10px 22px;border-radius:8px;border:none;background:#B8862B;color:#fff;font-size:14px;cursor:pointer;">بیا هڅه وکړئ</button>'+
-      '</div>';
-    return;
-  }
-
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
 
@@ -563,13 +434,10 @@ function startApp(){
     userPage:{manager:0, nto:0}
   };
   var PAGE_SIZE = 20;
-  var loadingWatchdog = null; // set once the "still loading" timeout has been scheduled
-  var slowLoad = false; // true once the loading screen has shown too long -- offer manual reload
   // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
   // manager who created that customer's account, before it opens up to all
-  // managers. This applies no matter what the bundle's current status is
-  // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
-  // findAssignedManager().  var ASSIGN_WAIT_MS = 40000; // 40 seconds
+  // managers. See isBundleClaimableByManager() / findAssignedManager().
+  var ASSIGN_WAIT_MS = 40000;
 
   // ---------------- generic pagination helper ----------------
   // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
@@ -657,23 +525,6 @@ function startApp(){
     return sSetDoc(key, obj);
   }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-
-  // ---------------- digit normalization (Pashto/Persian & Arabic-Indic numerals) ----------------
-  // Many phones default their keyboard to Pashto/Dari, which types numbers as
-  // ۰۱۲۳۴۵۶۷۸۹ (Extended Arabic-Indic, U+06F0-06F9) or ٠١٢٣٤٥٦٧٨٩ (Arabic-Indic,
-  // U+0660-0669) instead of plain 0-9. Every place in this app that reads a
-  // number (phone/reference numbers, and the amount typed inside a comment)
-  // must treat those the same as normal digits, or the value silently comes
-  // out as empty/zero.
-  function normalizeDigits(str){
-    if(str==null) return str;
-    return String(str).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function(ch){
-      var code = ch.charCodeAt(0);
-      if(code>=0x06F0 && code<=0x06F9) return String(code-0x06F0); // پښتو/دري ۰-۹
-      if(code>=0x0660 && code<=0x0669) return String(code-0x0660); // عربي ٠-٩
-      return ch;
-    });
-  }
 
   // ---------------- session persistence (stay logged in across refresh/close) ----------------
   var SESSION_KEY = 'roshanPortalSession';
@@ -790,8 +641,7 @@ function startApp(){
     manager:[
       {key:'ntos', label:'مشتريان'},
       {key:'sales', label:'بنډلونه'},
-      {key:'report', label:'فروشات'},
-      {key:'nto_report', label:'راپور-مشتري'}
+      {key:'report', label:'فروشات'}
     ],
     nto:[
       {key:'bundle', label:'نوى بنډل استول'},
@@ -806,26 +656,8 @@ function startApp(){
   // ---------------- render root ----------------
   function render(){
     var root = document.getElementById('app');
-    root.setAttribute('data-app-rendered','1');
     if(state.loading){
-      // If loading hangs (e.g. a Firestore request stalls on a bad mobile
-      // connection without ever erroring out), don't leave the person
-      // staring at "loading..." forever -- after a few seconds, offer a
-      // manual refresh instead.
-      if(!loadingWatchdog){
-        loadingWatchdog = setTimeout(function(){
-          slowLoad = true;
-          render();
-        }, 10000);
-      }
-      root.innerHTML = slowLoad ?
-        '<div class="login-wrap"><div class="login-card" style="text-align:center;">'+
-          '<p class="sub" style="margin-bottom:18px;">سیستم نوی کیږي، لږ صبر وکړئ...</p>'+
-          '<button class="btn" id="lw-reload" style="width:100%;">بیا هڅه وکړئ او صفحه بیا تازه کړئ</button>'+
-        '</div></div>' :
-        '<div class="login-wrap"><div class="login-card"><p class="sub">سیستم نوی کیږي، لږ صبر وکړئ...</p></div></div>';
-      var lwReload = document.getElementById('lw-reload');
-      if(lwReload) lwReload.onclick = function(){ location.reload(); };
+      root.innerHTML = '<div class="login-wrap"><div class="login-card"><p class="sub">بار کیږي...</p></div></div>';
       renderModalLayer();
       return;
     }
@@ -1103,7 +935,7 @@ function startApp(){
     if(state.section==='ntos' && (role==='admin'||role==='manager')) return renderUsersSection(body, 'nto', role==='admin', role==='admin', role);
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
-    if(state.section==='nto_report' && (role==='admin'||role==='manager')) return renderNtoReportSection(body, headerRow, role);
+    if(state.section==='nto_report' && role==='admin') return renderNtoReportSection(body, headerRow);
     if(state.section==='rolls' && role==='admin') return renderRollsSection(body);
     if(state.section==='complaints') return renderComplaintsSection(body, role);
 
@@ -1126,7 +958,7 @@ function startApp(){
 
     var f1 = document.getElementById('bd-f1');
     f1.addEventListener('input', function(){
-      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      var v = f1.value.replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1180,7 +1012,7 @@ function startApp(){
 
     var f1 = document.getElementById('dz-f1');
     f1.addEventListener('input', function(){
-      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      var v = f1.value.replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
     });
@@ -1230,21 +1062,11 @@ function startApp(){
       // elapses or it becomes theirs. Everything else (already
       // approved/rejected/etc., or unassigned customers) stays visible.
       allRows = allRows.filter(function(b){
-        if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
+        if(b.status!=='pending' && b.status!=='resubmit') return true;
         return isBundleClaimableByManager(b, state.currentUser.username);
       });
     }
     var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
-    // Resubmitted bundles are pinned to the very top of the list for every
-    // role (admin/manager/nto), most-recently-resubmitted first. Everything
-    // else keeps its existing relative order (Array#sort is stable).
-    rows = rows.slice().sort(function(a,b){
-      var ar = a.status==='resubmit' ? 1 : 0;
-      var br = b.status==='resubmit' ? 1 : 0;
-      if(ar!==br) return br-ar;
-      if(ar===1 && br===1) return (b.waitStartAt||b.createdAt||0) - (a.waitStartAt||a.createdAt||0);
-      return 0;
-    });
     var canProcess = (role==='admin' || role==='manager');
 
     if(headerRow && (role==='admin' || role==='manager')){
@@ -1268,15 +1090,12 @@ function startApp(){
           o['نیټه'] = fmtDate(b.createdAt);
           return o;
         });
-        ensureXLSX(function(err){
-          if(err){ showToast('د Excel کتابتون لوډ نشو -- خپل انټرنټ وګورئ.'); return; }
-          try{
-            var ws = XLSX.utils.json_to_sheet(data);
-            var wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'SalesReport');
-            XLSX.writeFile(wb, 'sales-report-'+Date.now()+'.xlsx');
-          }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
-        });
+        try{
+          var ws = XLSX.utils.json_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'SalesReport');
+          XLSX.writeFile(wb, 'sales-report-'+Date.now()+'.xlsx');
+        }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
       };
 
       if(role==='admin'){
@@ -1327,29 +1146,15 @@ function startApp(){
           // instead of pressing "لغوه کول") instead of it being locked forever.
           statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي — کلیک وکړئ چې دنده واخلئ':'')+'">'+statusLabel(b.status)+'</span>';
         }
-        // For a manager, the full number (and its copy button) is only shown
-        // once the bundle is approved ("فعاله شوو"). Every other status
-        // masks the last 3 digits and hides the copy button. Admin always
-        // sees the full number/button as before.
-        var maskForManager = (role==='manager' && b.status!=='approved');
-        var numberDisplay = maskForManager ? maskLast3Digits(b.field1) : escapeHtml(b.field1);
-        var copyBtn = (role==='manager' && !maskForManager) ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '';
-        // Resubmitted rows show the resubmit date/time instead of the
-        // original submission date/time.
-        var dateVal = (b.status==='resubmit' && b.waitStartAt) ? b.waitStartAt : b.createdAt;
-        var dateCell = fmtDateHtml(dateVal);
-        if(role==='admin'){
-          dateCell = '<button class="icon-btn-sm" data-delete-bundle="'+b.id+'" title="ړنګول" style="margin-left:6px;">&#128465;</button>'+dateCell;
-        }
         return '<tr>'+
           (role!=='nto' ? '<td data-label="مشتري-نوم">'+escapeHtml(b.ntoUsername)+'</td>' : '')+
-          '<td data-label="اړيکې-شمیره">'+numberDisplay+copyBtn+'</td>'+
+          '<td data-label="اړيکې-شمیره">'+escapeHtml(b.field1)+(role==='manager' ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '')+'</td>'+
           '<td data-label="بنډل-نوو">'+escapeHtml(b.field2)+'</td>'+
           '<td data-label="حالت">'+statusCell+'</td>'+
           (canProcess ? '<td data-label="تائيد کوونکى-مدير">'+(b.actionedBy?escapeHtml(b.actionedBy):'—')+'</td>' : '')+
           '<td data-label="يادونه-شوې">'+(b.comment?escapeHtml(b.comment):'—')+'</td>'+
-          '<td data-label="نیټه">'+dateCell+'</td>'+
-          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">بیا ځلې لیږل</button>' : '')+'</td>' : '')+
+          '<td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td>'+
+          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">ریسبمیټ</button>' : '')+'</td>' : '')+
         '</tr>';
       }).join('')+
     '</tbody></table></div><div id="bundle-pager"></div></div>';
@@ -1378,14 +1183,6 @@ function startApp(){
         };
       });
     }
-    if(role==='admin'){
-      Array.prototype.forEach.call(document.querySelectorAll('[data-delete-bundle]'), function(btn){
-        btn.onclick = function(e){
-          e.stopPropagation();
-          deleteBundleById(btn.getAttribute('data-delete-bundle'));
-        };
-      });
-    }
   }
 
   function copyToClipboard(text){
@@ -1407,30 +1204,6 @@ function startApp(){
     }else{
       fail();
     }
-  }
-
-  // Masks everything except the last 3 characters of a number with '***'
-  // (used to hide a customer's number from a manager until it's approved).
-  function maskLast3Digits(str){
-    str = String(str==null?'':str);
-    if(str.length<=3) return '***';
-    return escapeHtml(str.slice(0,-3))+'***';
-  }
-
-  // ---------------- ADMIN: delete a single bundle everywhere ----------------
-  // Asks for confirmation, then removes just this one bundle from the shared
-  // bundles table -- since every role reads the same table, this removes it
-  // for all users (admin/manager/nto) at once.
-  function deleteBundleById(bundleId){
-    var b = state.bundles.find(function(x){return x.id===bundleId;});
-    if(!b) return;
-    var ok = window.confirm('آیا تاسو ډاډه یاست چې غواړئ دا بنډل ړنګ کړئ؟ دا کار به دا بنډل د ټولو یوزرانو لپاره ړنګ کړي او بیرته نشي کیدلی.');
-    if(!ok) return;
-    state.bundles = state.bundles.filter(function(x){return x.id!==bundleId;});
-    persistBundles().then(function(){
-      showToast('بنډل ړنګ شو.');
-      renderDashboard(document.getElementById('app'));
-    });
   }
 
   function badgeClass(status){
@@ -1471,9 +1244,7 @@ function startApp(){
     return creator ? creator.username : null;
   }
   function isBundleClaimableByManager(b, managerUsername){
-    // Approved/rejected/deactivated bundles are already decided -- no more
-    // contention over who may act on them, so always visible/claimable.
-    if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
+    if(b.status!=='pending' && b.status!=='resubmit') return true; // in_process/etc: existing take-over rules apply
     var assignedMgr = findAssignedManager(b.ntoUsername);
     if(!assignedMgr) return true; // customer has no owning manager (e.g. created by admin) -- open to all immediately
     var startedAt = b.waitStartAt || b.createdAt || 0;
@@ -1489,7 +1260,7 @@ function startApp(){
     var now = Date.now();
     var soonest = null;
     state.bundles.forEach(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return;
+      if(b.status!=='pending' && b.status!=='resubmit') return;
       if(isBundleClaimableByManager(b, state.currentUser.username)) return;
       var startedAt = b.waitStartAt || b.createdAt || 0;
       var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
@@ -1509,7 +1280,7 @@ function startApp(){
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b) return;
     if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
-    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit'||b.status==='in_process') && !isBundleClaimableByManager(b, state.currentUser.username)){
+    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit') && !isBundleClaimableByManager(b, state.currentUser.username)){
       var ownMgr = findAssignedManager(b.ntoUsername);
       showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
       return;
@@ -1579,15 +1350,13 @@ function startApp(){
       // clearing/deleting bundle rows later can never zero out a real report.
       var amt = extractNumber(comment);
       var mgrUser = state.currentUser.username;
+      if(!state.managerSales[mgrUser]) state.managerSales[mgrUser] = {total:0, count:0};
+      state.managerSales[mgrUser].total += amt;
+      state.managerSales[mgrUser].count += 1;
       var ntoUser = b.ntoUsername;
-      var mgrKey = salesKey(mgrUser);
-      var ntoKey = salesKey(ntoUser);
-      if(!state.managerSales[mgrKey]) state.managerSales[mgrKey] = {total:0, count:0};
-      state.managerSales[mgrKey].total += amt;
-      state.managerSales[mgrKey].count += 1;
-      if(!state.ntoSales[ntoKey]) state.ntoSales[ntoKey] = {total:0, count:0};
-      state.ntoSales[ntoKey].total += amt;
-      state.ntoSales[ntoKey].count += 1;
+      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0, count:0};
+      state.ntoSales[ntoUser].total += amt;
+      state.ntoSales[ntoUser].count += 1;
       // Use atomic field increments instead of persistSalesTotals()'s full
       // read-modify-write: two managers approving bundles at nearly the same
       // moment could otherwise each overwrite the whole salesTotals document
@@ -1596,10 +1365,10 @@ function startApp(){
       // lost that way, and set(...,{merge:true}) also creates the document
       // and any missing nested fields on the very first approval.
       var incUpdate = {};
-      incUpdate['managerSales.'+mgrKey+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['managerSales.'+mgrKey+'.count'] = firebase.firestore.FieldValue.increment(1);
-      incUpdate['ntoSales.'+ntoKey+'.total'] = firebase.firestore.FieldValue.increment(amt);
-      incUpdate['ntoSales.'+ntoKey+'.count'] = firebase.firestore.FieldValue.increment(1);
+      incUpdate['managerSales.'+mgrUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['managerSales.'+mgrUser+'.count'] = firebase.firestore.FieldValue.increment(1);
+      incUpdate['ntoSales.'+ntoUser+'.total'] = firebase.firestore.FieldValue.increment(amt);
+      incUpdate['ntoSales.'+ntoUser+'.count'] = firebase.firestore.FieldValue.increment(1);
       saves.push(db.collection('appdata').doc('salesTotals').set(incUpdate, {merge:true}));
     }
     Promise.all(saves).then(function(){
@@ -1726,17 +1495,9 @@ function startApp(){
           '<button class="btn btn-ghost btn-block" id="pw-cancel" style="margin-top:10px;">لغوه کول</button>'+
         '</div>';
     }else if(state.modal.type==='process'){
-      var procB = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
       layer.innerHTML =
         '<div class="modal-card">'+
           '<h3>د بنډل پروسس کول</h3>'+
-          '<div class="proc-number-box">'+
-            '<div class="proc-number-row">'+
-              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
-              '<button class="icon-btn-copy" id="proc-copy-number" title="کاپي کول">&#128203;</button>'+
-            '</div>'+
-            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
-          '</div>'+
           '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px 0;">'+
             '<button class="btn btn-sm btn-ghost" id="proc-quick-1">پیسې اضافه کړه</button>'+
@@ -1794,10 +1555,6 @@ function startApp(){
       document.getElementById('proc-quick-1').onclick = function(){ confirmQuickReject('پیسې اضافه کړه'); };
       document.getElementById('proc-quick-2').onclick = function(){ confirmQuickReject('پیسې کمې دي'); };
       document.getElementById('proc-quick-3').onclick = function(){ confirmQuickReject('شمیره غلطه ده'); };
-      (function(){
-        var copyBtn = document.getElementById('proc-copy-number');
-        if(copyBtn){ copyBtn.onclick = function(){ var pb = state.bundles.find(function(x){return x.id===state.modal.bundleId;}); if(pb) copyToClipboard(pb.field1); }; }
-      })();
     }else if(state.modal.type==='deactivate-confirm'){
       document.getElementById('deact-confirm').onclick = submitDeactivate;
       document.getElementById('deact-cancel').onclick = closeProcessModal;
@@ -1926,10 +1683,9 @@ function startApp(){
   // ---------------- REPORT SECTION ----------------
   function extractNumber(str){
     if(!str) return 0;
-    var normalized = normalizeDigits(str);
     // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
     // commas are still picked up as a single number instead of just "1".
-    var cleaned = normalized.replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+    var cleaned = String(str).replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
     var m = cleaned.match(/\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
   }
@@ -1937,35 +1693,18 @@ function startApp(){
     var d = new Date(ts);
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
-  function salesKey(username){ return encodeURIComponent(String(username||'')); }
-  function getSalesEntry(map, username){
-    if(!map) return null;
-    var direct = map[username];
-    if(direct && typeof direct.total==='number') return direct;
-    var safe = map[salesKey(username)];
-    if(safe && typeof safe.total==='number') return safe;
-    // Read legacy data written through dotted Firestore field paths.
-    var u = String(username||'');
-    var dot = u.lastIndexOf('.');
-    if(dot>0){
-      var parent = map[u.slice(0,dot)];
-      var legacy = parent && parent[u.slice(dot+1)];
-      if(legacy && typeof legacy.total==='number') return legacy;
-    }
-    return null;
-  }
   function managerStats(managerUsername){
-    var s = getSalesEntry(state.managerSales, managerUsername);
-    return s ? {total:Number(s.total)||0, count:Number(s.count)||0} : {total:0, count:0};
+    var s = state.managerSales[managerUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
   }
 
   function ntoStats(ntoUsername){
-    var s = getSalesEntry(state.ntoSales, ntoUsername);
-    return s ? {total:Number(s.total)||0, count:Number(s.count)||0} : {total:0, count:0};
+    var s = state.ntoSales[ntoUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
   }
 
   // ---------------- ADMIN: PER-NTO REPORT ----------------
-  function renderNtoReportSection(body, headerRow, role){
+  function renderNtoReportSection(body, headerRow){
     var ntoUsers = state.users.filter(function(u){return u.role==='nto';});
 
     if(headerRow){
@@ -1984,15 +1723,12 @@ function startApp(){
           o['فروشات'] = s.total;
           return o;
         });
-        ensureXLSX(function(err){
-          if(err){ showToast('د Excel کتابتون لوډ نشو -- خپل انټرنټ وګورئ.'); return; }
-          try{
-            var ws = XLSX.utils.json_to_sheet(data);
-            var wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'NtoReport');
-            XLSX.writeFile(wb, 'nto-report-'+Date.now()+'.xlsx');
-          }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
-        });
+        try{
+          var ws = XLSX.utils.json_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'NtoReport');
+          XLSX.writeFile(wb, 'nto-report-'+Date.now()+'.xlsx');
+        }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
       };
     }
 
@@ -2004,32 +1740,28 @@ function startApp(){
       var s = ntoStats(u.username);
       return {username:u.username, count:s.count, total:s.total};
     });
-    // The reset ("ریسیټ") icon is admin-only -- managers can view this
-    // report but must not be able to clear anyone's numbers.
     body.innerHTML = '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
-      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th>'+(role==='admin' ? '<th></th>' : '')+
+      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th><th></th>'+
       '</tr></thead><tbody>'+
       rows.map(function(r){
         return '<tr><td data-label="مشتري">'+escapeHtml(r.username)+'</td><td data-label="فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
-          (role==='admin' ? '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td>' : '')+'</tr>';
+          '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td></tr>';
       }).join('')+
     '</tbody></table></div></div>';
 
-    if(role==='admin'){
-      Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
-        btn.onclick = function(){
-          var nu = btn.getAttribute('data-nto-reset');
-          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
-          if(!ok) return;
-          state.ntoSales[salesKey(nu)] = {total:0, count:0};
-          var resetObj = {}; resetObj['ntoSales.'+salesKey(nu)] = {total:0, count:0};
-          db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
-            showToast('د '+nu+' راپور پاک شو.');
-            renderSection(document.getElementById('main-area'));
-          });
-        };
-      });
-    }
+    Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
+      btn.onclick = function(){
+        var nu = btn.getAttribute('data-nto-reset');
+        var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
+        if(!ok) return;
+        state.ntoSales[nu] = {total:0, count:0};
+        var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
+        db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+          showToast('د '+nu+' راپور پاک شو.');
+          renderSection(document.getElementById('main-area'));
+        });
+      };
+    });
   }
 
   function renderReportSection(body, role, headerRow){
@@ -2052,15 +1784,12 @@ function startApp(){
             o['فروشات'] = s.total;
             return o;
           });
-          ensureXLSX(function(err){
-            if(err){ showToast('د Excel کتابتون لوډ نشو -- خپل انټرنټ وګورئ.'); return; }
-            try{
-              var ws = XLSX.utils.json_to_sheet(data);
-              var wb = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(wb, ws, 'ManagerReport');
-              XLSX.writeFile(wb, 'manager-report-'+Date.now()+'.xlsx');
-            }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
-          });
+          try{
+            var ws = XLSX.utils.json_to_sheet(data);
+            var wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'ManagerReport');
+            XLSX.writeFile(wb, 'manager-report-'+Date.now()+'.xlsx');
+          }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
         };
       }
 
@@ -2085,8 +1814,8 @@ function startApp(){
             var mgr = btn.getAttribute('data-mgr-reset');
             var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
             if(!ok) return;
-            state.managerSales[salesKey(mgr)] = {total:0, count:0};
-            var resetObj = {}; resetObj['managerSales.'+salesKey(mgr)] = {total:0, count:0};
+            state.managerSales[mgr] = {total:0, count:0};
+            var resetObj = {}; resetObj['managerSales.'+mgr] = {total:0, count:0};
             db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
               showToast('د '+mgr+' راپور پاک شو.');
               renderSection(document.getElementById('main-area'));
@@ -2308,7 +2037,7 @@ function startApp(){
   function checkForManagerEscalations(){
     if(!state.currentUser || state.currentUser.role!=='manager') return;
     var opened = state.bundles.filter(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return false;
+      if(b.status!=='pending' && b.status!=='resubmit') return false;
       if(state.notifiedBundleIds[b.id]) return false;
       return isBundleClaimableByManager(b, state.currentUser.username);
     });
@@ -2372,63 +2101,34 @@ function startApp(){
 
   // ---------------- PWA: register service worker ----------------
   // Auto-update: whenever a newer sw.js/cache gets installed in the
-  // background -- for a normal browser tab that's been left open OR for
-  // the installed home-screen app -- force it to take over and reload
-  // automatically, instead of people being stuck on old code until they
-  // manually refresh (browser tab) or delete+reinstall (installed app).
+  // background, force a one-time reload so people actually get the new
+  // code instead of being stuck on a cached copy of index.html/app logic
+  // until they manually clear their browser cache.
   if('serviceWorker' in navigator){
     var swReloaded = false;
-    function reloadForNewVersion(){
-      if(swReloaded) return;
-      swReloaded = true;
-      window.location.reload();
-    }
-    // Tells a given worker (installing or already waiting) to activate
-    // right away instead of sitting idle until every open tab is closed.
-    function tellWorkerToSkipWaiting(worker){
-      if(worker && worker.postMessage){
-        try{ worker.postMessage('SKIP_WAITING'); }catch(e){}
-      }
-    }
     window.addEventListener('load', function(){
       navigator.serviceWorker.register('sw.js').then(function(reg){
         if(!reg) return;
-
-        // If a new worker is already sitting there waiting (found on a
-        // previous visit before this tab had a chance to reload), push it
-        // to activate now.
-        if(reg.waiting) tellWorkerToSkipWaiting(reg.waiting);
-
-        function watchInstallingWorker(nw){
+        reg.update().catch(function(){});
+        if(reg.waiting && navigator.serviceWorker.controller){
+          reg.waiting.postMessage && reg.waiting.postMessage('SKIP_WAITING');
+        }
+        reg.addEventListener('updatefound', function(){
+          var nw = reg.installing;
           if(!nw) return;
           nw.addEventListener('statechange', function(){
-            if(nw.state==='installed' && navigator.serviceWorker.controller){
-              // A new version just finished installing while an older one
-              // is still controlling this page -- activate it immediately.
-              tellWorkerToSkipWaiting(nw);
+            if(nw.state==='installed' && navigator.serviceWorker.controller && !swReloaded){
+              swReloaded = true;
+              window.location.reload();
             }
           });
-        }
-        watchInstallingWorker(reg.installing);
-        reg.addEventListener('updatefound', function(){
-          watchInstallingWorker(reg.installing);
-        });
-
-        // A single reg.update() right after registering isn't enough for a
-        // tab (or the installed app) that just stays open for a long time,
-        // since nothing else would ever trigger another check. Poll for a
-        // fresh sw.js periodically, and also re-check the moment the tab/app
-        // comes back into view after being backgrounded.
-        setInterval(function(){ reg.update().catch(function(){}); }, 60000);
-        document.addEventListener('visibilitychange', function(){
-          if(document.visibilityState==='visible') reg.update().catch(function(){});
         });
       }).catch(function(){ /* ignore */ });
-
-      // Fires once the new worker we told to skip-waiting actually takes
-      // control of this page -- that's the reliable moment to reload so the
-      // freshly-activated code is what actually runs.
-      navigator.serviceWorker.addEventListener('controllerchange', reloadForNewVersion);
+      if(navigator.serviceWorker.controller){
+        navigator.serviceWorker.addEventListener('controllerchange', function(){
+          if(!swReloaded){ swReloaded = true; window.location.reload(); }
+        });
+      }
     });
   }
 
@@ -2441,32 +2141,6 @@ function startApp(){
     render();
   });
 
-  // ---------------- pull-to-refresh ----------------
-  // On touch devices, pulling down from the top of the page reloads the app.
-  (function(){
-    var startY = 0, pulling = false;
-    document.addEventListener('touchstart', function(e){
-      if(e.touches && e.touches.length===1 && window.scrollY<=0){
-        startY = e.touches[0].clientY;
-        pulling = true;
-      } else { pulling = false; }
-    }, {passive:true});
-    document.addEventListener('touchmove', function(e){
-      if(!pulling || !e.touches || !e.touches.length) return;
-      var dy = e.touches[0].clientY - startY;
-      if(dy < 0) pulling = false;
-    }, {passive:true});
-    document.addEventListener('touchend', function(e){
-      if(!pulling) return;
-      pulling = false;
-      var endY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : startY;
-      var dy = endY - startY;
-      if(dy >= 90 && window.scrollY<=0){
-        window.location.reload();
-      }
-    }, {passive:true});
-  })();
-
   // ---------------- init ----------------
   loadAll().then(function(){
     restoreSession();
@@ -2476,7 +2150,7 @@ function startApp(){
     render();
   });
 
-}
+})();
 </script>
 </body>
 </html>
