@@ -17,6 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -410,6 +411,18 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
+
+  // ====== PUSH NOTIFICATIONS (Firebase Cloud Messaging) ======
+  // Get this from: Firebase Console -> Project settings -> Cloud Messaging
+  // tab -> "Web Push certificates" -> generate a key pair -> copy the key.
+  // Push notifications will NOT work until this is filled in.
+  var VAPID_KEY = 'BK8t4eg1pCEzLbcxWGIZSycFMFUNMw_tJNGqWITg9UgNrf6NloXLm4VP75CS52Jzlx8TA9WBLQcrAH6zOdEtSkI';
+  var messaging = null;
+  try{
+    if(firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported()){
+      messaging = firebase.messaging();
+    }
+  }catch(e){}
 
   var state = {
     currentUser:null,
@@ -2269,12 +2282,41 @@
     toastTimer = setTimeout(function(){ el.remove(); }, 2600);
   }
 
-  // ---------------- notifications (Web Notification API) ----------------
+  // ---------------- notifications (Web Notification API + FCM push) ----------------
   function requestNotificationPermission(){
     if(!('Notification' in window)) return;
     if(Notification.permission==='default'){
-      Notification.requestPermission();
+      Notification.requestPermission().then(function(perm){
+        if(perm==='granted') setupPushForCurrentUser();
+      }).catch(function(){});
+    }else if(Notification.permission==='granted'){
+      setupPushForCurrentUser();
     }
+  }
+
+  // Registers this device for real push notifications (FCM) -- these keep
+  // arriving even when the app is closed/backgrounded, unlike the in-page
+  // Firestore listeners below which only fire while the app is open and
+  // active. The resulting token is stored on the logged-in user's record so
+  // a server-side Cloud Function can look it up and send that user a push
+  // whenever something relevant happens (see functions/index.js).
+  function setupPushForCurrentUser(){
+    if(!messaging) return; // unsupported browser, or VAPID_KEY not filled in yet
+    if(!('serviceWorker' in navigator)) return;
+    if(!state.currentUser) return;
+    if(!('Notification' in window) || Notification.permission!=='granted') return;
+    navigator.serviceWorker.ready.then(function(reg){
+      return messaging.getToken({vapidKey:VAPID_KEY, serviceWorkerRegistration:reg});
+    }).then(function(token){
+      if(!token || !state.currentUser) return;
+      var u = state.users.find(function(x){ return x.username===state.currentUser.username; });
+      if(!u) return;
+      if(!u.fcmTokens) u.fcmTokens = [];
+      if(u.fcmTokens.indexOf(token)===-1){
+        u.fcmTokens.push(token);
+        persistUsers();
+      }
+    }).catch(function(err){ console.warn('FCM token setup failed', err); });
   }
 
   function fireNotification(title, body){
@@ -2517,6 +2559,7 @@
     scheduleAssignWindowRefresh();
     render();
     startVersionCheck();
+    if(state.currentUser) requestNotificationPermission();
   });
 
 })();
