@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260904-02">
+<meta name="app-build-version" content="20260903-06">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +17,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -411,12 +410,6 @@
   };
   firebase.initializeApp(firebaseConfig);
   var db = firebase.firestore();
-  var messaging = null;
-  try{
-    if(firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported()){
-      messaging = firebase.messaging();
-    }
-  }catch(e){ messaging = null; }
 
   var state = {
     currentUser:null,
@@ -864,7 +857,7 @@
       persistUsers();
     }
     saveSession();
-    requestNotificationPermission().then(function(){ registerBackgroundNotifications(); });
+    requestNotificationPermission();
     render();
   }
 
@@ -1333,7 +1326,7 @@
         // once the bundle is approved ("فعاله شوو"). Every other status
         // masks the last 3 digits and hides the copy button. Admin always
         // sees the full number/button as before.
-        var maskForManager = (role==='manager' && b.status!=='approved');
+        var maskForManager = (role==='manager' && b.status!=='approved' && b.status!=='rejected' && b.status!=='deactivated');
         var numberDisplay = maskForManager ? maskLast3Digits(b.field1) : escapeHtml(b.field1);
         var copyBtn = (role==='manager' && !maskForManager) ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '';
         // Resubmitted rows show the resubmit date/time instead of the
@@ -1824,6 +1817,13 @@
       layer.innerHTML =
         '<div class="modal-card">'+
           '<h3>د بنډلونو غیري فعالول</h3>'+
+          '<div class="proc-number-box">'+
+            '<div class="proc-number-row">'+
+              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
+              '<button class="icon-btn-copy" id="deact-copy-number" title="کاپي کول">&#128203;</button>'+
+            '</div>'+
+            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
+          '</div>'+
           '<p class="note-text" style="margin-top:0;">آیا تاسو غواړئ چې د دې مشتري ټول بنډلونه غیري فعاله کړئ؟</p>'+
           '<div class="modal-actions">'+
             '<button class="btn btn-danger btn-block" id="deact-confirm">غیري فعاله شو.</button>'+
@@ -1843,6 +1843,21 @@
     }
 
     document.body.appendChild(layer);
+
+    if(state.modal.type==='deactivate-confirm'){
+      var deactCopyBtn = document.getElementById('deact-copy-number');
+      var deactBundle = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+      if(deactCopyBtn && deactBundle){
+        deactCopyBtn.onclick = function(){
+          var num = deactBundle.field1 || '';
+          if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(num).then(function(){ showToast('شمیره کاپي شوه.'); }).catch(function(){ showToast('کاپي کول ممکن نه شول.'); });
+          }else{
+            var ta=document.createElement('textarea'); ta.value=num; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');showToast('شمیره کاپي شوه.');}catch(e){showToast('کاپي کول ممکن نه شول.');} ta.remove();
+          }
+        };
+      }
+    }
 
     if(state.modal.type==='confirm-logout'){
       document.getElementById('cl-confirm').onclick = doLogout;
@@ -2254,62 +2269,12 @@
     toastTimer = setTimeout(function(){ el.remove(); }, 2600);
   }
 
-  // ---------------- notifications (Web + FCM background notifications) ----------------
-  // IMPORTANT:
-  // Web Audio works only while this page is active. For a home-screen PWA that
-  // must ring while another app is open, notifications must be delivered by
-  // Firebase Cloud Messaging (FCM) to the service worker.
-  //
-  // Put your Firebase Web Push certificate (VAPID) public key below.
-  // Firebase Console -> Project settings -> Cloud Messaging -> Web configuration.
-  var FCM_VAPID_KEY = 'BK8t4eg1pCEzLbcxWGIZSycFMFUNMw_tJNGqWITg9UgNrf6NloXLm4VP75CS52Jzlx8TA9WBLQcrAH6zOdEtSkI';
-
+  // ---------------- notifications (Web Notification API) ----------------
   function requestNotificationPermission(){
-    if(!('Notification' in window)) return Promise.resolve('unsupported');
-    if(Notification.permission==='granted') return Promise.resolve('granted');
-    if(Notification.permission==='denied') return Promise.resolve('denied');
-    return Notification.requestPermission();
-  }
-
-  function saveFcmToken(token){
-    if(!token) return Promise.resolve();
-    return db.collection('appdata').doc('notificationTokens').get().then(function(snap){
-      var list = (snap.exists && snap.data().list) ? snap.data().list : [];
-      var u = state.currentUser;
-      if(!u) return;
-      var found = false;
-      list = list.map(function(x){
-        if(x && x.token===token){
-          found = true;
-          return {token:token, username:u.username, role:u.role, updatedAt:Date.now()};
-        }
-        return x;
-      });
-      if(!found) list.push({token:token, username:u.username, role:u.role, updatedAt:Date.now()});
-      // Keep this list bounded in case an old browser token is never cleaned up.
-      if(list.length>500) list=list.slice(list.length-500);
-      return db.collection('appdata').doc('notificationTokens').set({list:list},{merge:true});
-    }).catch(function(e){ console.warn('FCM token save failed',e); });
-  }
-
-  function registerBackgroundNotifications(){
-    if(!messaging || !('serviceWorker' in navigator)) return;
-    if(FCM_VAPID_KEY.indexOf('PASTE_')===0) return;
-
-    requestNotificationPermission().then(function(permission){
-      if(permission!=='granted') return;
-      return navigator.serviceWorker.ready;
-    }).then(function(reg){
-      if(!reg) return;
-      return messaging.getToken({
-        vapidKey:FCM_VAPID_KEY,
-        serviceWorkerRegistration:reg
-      });
-    }).then(function(token){
-      if(token) return saveFcmToken(token);
-    }).catch(function(err){
-      console.warn('Background notification setup failed:',err);
-    });
+    if(!('Notification' in window)) return;
+    if(Notification.permission==='default'){
+      Notification.requestPermission();
+    }
   }
 
   function fireNotification(title, body){
@@ -2319,16 +2284,15 @@
       if(navigator.serviceWorker && navigator.serviceWorker.ready){
         navigator.serviceWorker.ready.then(function(reg){
           if(reg && reg.showNotification){
-            return reg.showNotification(title, {
-              body:body,
-              icon:'icon-192.png',
-              badge:'icon-192.png',
-              vibrate:[250,120,250],
-              tag:'roshan-'+Date.now(),
-              renotify:true
-            });
+            reg.showNotification(title, {body:body, icon:'icon-192.png', badge:'icon-192.png', vibrate:[200,100,200]});
+          }else{
+            new Notification(title, {body:body, icon:'icon-192.png'});
           }
-        }).catch(function(){});
+        }).catch(function(){
+          new Notification(title, {body:body, icon:'icon-192.png'});
+        });
+      }else{
+        new Notification(title, {body:body, icon:'icon-192.png'});
       }
     }catch(e){}
   }
@@ -2550,7 +2514,6 @@
     restoreSession();
     state.loading = false;
     attachListeners();
-    registerBackgroundNotifications();
     scheduleAssignWindowRefresh();
     render();
     startVersionCheck();
