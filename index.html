@@ -1,0 +1,2525 @@
+<!DOCTYPE html>
+<html lang="ps" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<title>Roshan Bundle Activation</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#101826">
+<meta name="app-build-version" content="20260903-06">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="روشن پورټال">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#EEF1F4;
+    --surface:#FFFFFF;
+    --ink:#1B2430;
+    --ink-soft:#5B6675;
+    --sidebar:#101826;
+    --sidebar-text:#C9D1DB;
+    --sidebar-text-dim:#7C8698;
+    --accent:#B8862B;
+    --accent-soft:#F3E7CE;
+    --ok:#2E7D5B;
+    --ok-soft:#DFF0E7;
+    --danger:#B3432B;
+    --danger-soft:#F6E1DA;
+    --info:#2E5FA3;
+    --info-soft:#DDE8F6;
+    --border:#DDE2E8;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overscroll-behavior-y:contain;}
+  body{
+    font-family:'Vazirmatn','Segoe UI',Tahoma,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    direction:rtl;
+    min-height:100vh;
+    -webkit-text-size-adjust:100%;
+  }
+  button,.btn,.nav-item,.icon-btn,.icon-btn-sm,.icon-btn-copy,input,select,textarea{touch-action:manipulation;}
+  #app{min-height:100vh;}
+
+  /* ---------- Login ---------- */
+  .login-wrap{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:
+      radial-gradient(circle at 85% 10%, rgba(184,134,43,0.18), transparent 45%),
+      linear-gradient(180deg, #101826 0%, #182234 100%);
+  }
+  .login-card{
+    background:var(--surface);
+    width:100%;
+    max-width:380px;
+    border-radius:16px;
+    padding:36px 30px;
+    box-shadow:0 30px 60px rgba(0,0,0,0.35);
+  }
+  .login-brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:6px;
+  }
+  .login-brand .mark{
+    width:34px;height:34px;border-radius:8px;
+    background:linear-gradient(135deg,#B8862B,#8f6a20);
+    flex:none;
+  }
+  .login-brand span{font-weight:800;font-size:19px;letter-spacing:.2px;}
+  .login-card p.sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 26px 0;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:13px;color:var(--ink-soft);margin-bottom:6px;font-weight:600;}
+  .field input, .field textarea, .field select{
+    width:100%;
+    padding:11px 13px;
+    border:1.5px solid var(--border);
+    border-radius:8px;
+    font-family:inherit;
+    font-size:14.5px;
+    background:#FBFCFD;
+    color:var(--ink);
+    outline:none;
+    transition:border-color .15s;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus{border-color:var(--accent);}
+  .field input:disabled, .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:11px 18px;
+    border-radius:8px;
+    border:none;
+    font-family:inherit;
+    font-weight:700;
+    font-size:14.5px;
+    cursor:pointer;
+    transition:filter .15s, transform .05s;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-primary:hover{filter:brightness(1.15);}
+  .btn-gold{background:var(--accent);color:#fff;}
+  .btn-gold:hover{filter:brightness(1.08);}
+  .btn-ok{background:var(--ok);color:#fff;}
+  .btn-ok:hover{filter:brightness(1.1);}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-danger:hover{filter:brightness(1.1);}
+  .btn-info{background:var(--info);color:#fff;}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border:1.5px solid var(--border);}
+  .btn-ghost:hover{border-color:var(--ink-soft);color:var(--ink);}
+  .btn-block{width:100%;}
+  .btn-sm{padding:6px 12px;font-size:13px;border-radius:6px;}
+  .icon-btn{
+    width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);
+    background:#fff;display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:16px;
+  }
+  .icon-btn:hover{border-color:var(--accent);}
+  .icon-btn-sm{
+    width:28px;height:28px;border-radius:7px;border:1.5px solid var(--border);
+    background:#fff;display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:14px;color:var(--danger);
+  }
+  .icon-btn-sm:hover{border-color:var(--danger);background:var(--danger-soft);}
+  .icon-btn-copy{
+    border:none;background:transparent;cursor:pointer;font-size:13px;
+    color:var(--ink-soft);padding:2px 4px;vertical-align:middle;
+  }
+  .icon-btn-copy:hover{color:var(--accent);}
+  .error-box{
+    background:var(--danger-soft);color:var(--danger);
+    border-radius:8px;padding:10px 12px;font-size:13.5px;margin-bottom:16px;font-weight:600;
+  }
+
+  /* ---------- Disabled full screen ---------- */
+  .blocked-wrap{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:#101826;
+  }
+  .blocked-card{
+    background:#fff;border-radius:16px;padding:40px 32px;max-width:420px;text-align:center;
+    box-shadow:0 30px 60px rgba(0,0,0,.35);
+  }
+  .blocked-card .icon{
+    width:56px;height:56px;border-radius:50%;background:var(--danger-soft);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 18px auto;
+    font-size:26px;color:var(--danger);
+  }
+  .blocked-card h3{margin:0 0 10px 0;font-size:17px;}
+  .blocked-card p{color:var(--ink-soft);font-size:14px;line-height:1.8;direction:ltr;text-align:center;}
+
+  /* ---------- Dashboard layout ---------- */
+  /* Sidebar is an overlay drawer on ALL screen sizes: hidden by default,
+     opened/closed via the hamburger icon in the top bar. */
+  .shell{position:relative;}
+  .sidebar-backdrop{
+    position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:54;
+    display:none;
+  }
+  .sidebar-backdrop.show{display:block;}
+  body.force-desktop .sidebar-backdrop{display:none !important;}
+  .sidebar{
+    width:236px;background:var(--sidebar);color:var(--sidebar-text);
+    display:none;
+    flex-direction:column;padding:22px 16px;
+    position:fixed;top:0;right:0;height:100vh;z-index:55;
+    box-shadow:0 12px 24px rgba(0,0,0,.3);
+    overflow-y:auto;
+  }
+  .sidebar.mobile-open{display:flex;}
+  .sidebar .brand{display:flex;align-items:center;gap:10px;padding:0 6px 22px 6px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:18px;}
+  .sidebar .brand .mark{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#B8862B,#8f6a20);flex:none;}
+  .sidebar .brand b{font-size:15.5px;}
+  .sidebar .role-tag{
+    font-size:11.5px;color:var(--sidebar-text-dim);
+    background:rgba(255,255,255,.06);
+    display:inline-block;padding:3px 10px;border-radius:20px;margin-bottom:18px;
+  }
+  .nav-item{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:11px 12px;border-radius:8px;margin-bottom:4px;
+    color:var(--sidebar-text);cursor:pointer;font-size:14px;font-weight:600;
+    transition:background .12s;
+  }
+  .nav-item:hover{background:rgba(255,255,255,.06);}
+  .nav-item.active{background:var(--accent);color:#fff;}
+  .nav-badge{
+    background:var(--danger);color:#fff;font-size:11px;font-weight:800;
+    min-width:18px;height:18px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 5px;
+  }
+  .sidebar .spacer{flex:1;}
+  .sidebar .user-box{
+    border-top:1px solid rgba(255,255,255,.08);padding-top:14px;margin-top:8px;
+  }
+  .sidebar .user-box .uname{font-size:13.5px;font-weight:700;color:#fff;margin-bottom:8px;}
+  .main{padding:30px 34px;overflow-y:auto;min-width:0;}
+  .main-header{margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .main-header h2{margin:0 0 4px 0;font-size:21px;}
+  .main-header p{margin:0;color:var(--ink-soft);font-size:13.5px;}
+  .header-actions{display:flex;gap:8px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:20px;}
+  .card h4{margin:0 0 16px 0;font-size:15px;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;}
+  .row .field{flex:1;min-width:180px;margin-bottom:0;}
+
+  /* ---------- Search box ---------- */
+  .search-row{margin-bottom:16px;position:relative;}
+  .search-row input{
+    width:100%;padding:11px 40px 11px 13px;border:1.5px solid var(--border);border-radius:8px;
+    font-family:inherit;font-size:14px;background:#FBFCFD;color:var(--ink);outline:none;
+    transition:border-color .15s;
+  }
+  .search-row input:focus{border-color:var(--accent);}
+  .search-row .search-icon{
+    position:absolute;top:50%;right:13px;transform:translateY(-50%);
+    color:var(--ink-soft);font-size:14px;pointer-events:none;
+  }
+
+  /* ---------- Pagination bar ---------- */
+  .pager{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    margin-top:16px;padding-top:14px;border-top:1px solid var(--border);
+  }
+  .pager .pager-info{font-size:12.5px;color:var(--ink-soft);}
+  .pager .pager-nav{display:flex;align-items:center;gap:6px;}
+  .pager .pager-nav button{
+    width:32px;height:32px;border-radius:7px;border:1.5px solid var(--border);background:#fff;
+    cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--ink);
+  }
+  .pager .pager-nav button:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  .pager .pager-nav button:disabled{opacity:.4;cursor:not-allowed;}
+  .pager .pager-nav .pager-page{font-size:12.5px;color:var(--ink-soft);padding:0 4px;min-width:70px;text-align:center;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.4px;}
+  th,td{padding:11px 10px;text-align:right;border-bottom:1px solid var(--border);}
+  th{color:var(--ink-soft);font-weight:700;font-size:12px;}
+  tr:last-child td{border-bottom:none;}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700;
+    cursor:default;
+  }
+  .badge.clickable{cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+  .badge-pending{background:var(--accent-soft);color:#7a5a17;}
+  .badge-process{background:var(--info-soft);color:var(--info);}
+  .badge-approved{background:var(--ok-soft);color:var(--ok);}
+  .badge-rejected{background:var(--danger-soft);color:var(--danger);}
+  .badge-resubmit{background:#EFE3F7;color:#6b3fa0;}
+  .badge-deactivated{background:#E7E4E0;color:#5C5347;}
+  .badge-enabled{background:var(--ok-soft);color:var(--ok);}
+  .badge-disabled{background:var(--danger-soft);color:var(--danger);}
+  .empty-state{color:var(--ink-soft);font-size:13.5px;padding:26px 10px;text-align:center;}
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:12px 22px;border-radius:9px;font-size:13.5px;font-weight:600;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:999;
+  }
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .note-text{color:var(--ink-soft);font-size:12.5px;margin:14px 0 0 0;}
+  .small-muted{color:var(--ink-soft);font-size:11.5px;}
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(16,24,38,.55);
+    display:flex;align-items:center;justify-content:center;padding:20px;z-index:500;
+  }
+  .modal-card{
+    background:#fff;border-radius:14px;padding:26px;max-width:460px;width:100%;
+    box-shadow:0 30px 60px rgba(0,0,0,.35);
+  }
+  .modal-card h3{margin:0 0 14px 0;font-size:16.5px;}
+  .modal-actions{display:flex;gap:10px;margin-top:18px;}
+  .modal-actions .btn{flex:1;}
+  .modal-close{
+    position:absolute;top:14px;left:14px;
+  }
+  .modal-card{position:relative;}
+  .proc-number-box{background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;}
+  .proc-number-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .proc-number{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:.3px;}
+  .proc-bundle-name{font-size:13px;color:var(--ink-soft);margin-top:6px;}
+
+  /* ---------- Top bar with hamburger toggle (shown on every screen size) ---------- */
+  .mobile-topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--sidebar);color:#fff;padding:12px 16px;
+    position:sticky;top:0;z-index:60;
+  }
+  .mobile-topbar .mt-title{font-weight:800;font-size:15px;color:#fff;}
+  .mobile-topbar .hamburger-btn{
+    background:transparent;border:1.5px solid rgba(255,255,255,.3);color:#fff;
+    width:38px;height:38px;border-radius:8px;font-size:18px;cursor:pointer;flex:none;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .mobile-topbar .hamburger-btn:hover{border-color:var(--accent);}
+  .mobile-topbar .mt-spacer{width:38px;flex:none;}
+
+  /* ---------- Top-bar user menu ---------- */
+  .mt-user-wrap{position:relative;flex:none;}
+  .mt-user-btn{
+    background:transparent;border:1.5px solid rgba(255,255,255,.3);color:#fff;
+    padding:8px 12px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;
+    display:flex;align-items:center;gap:6px;font-family:inherit;max-width:150px;
+  }
+  .mt-user-btn:hover{border-color:var(--accent);}
+  .mt-user-btn .mt-user-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:105px;}
+  .mt-user-btn .mt-caret{font-size:10px;color:var(--sidebar-text-dim);flex:none;}
+  .mt-user-dropdown{
+    position:absolute;top:calc(100% + 8px);left:0;
+    background:#fff;color:var(--ink);border-radius:10px;min-width:200px;
+    box-shadow:0 14px 34px rgba(0,0,0,.28);padding:8px;z-index:70;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .mt-user-item{
+    background:transparent;border:none;text-align:right;padding:10px 12px;border-radius:7px;
+    font-family:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;
+  }
+  .mt-user-item:hover{background:var(--bg);}
+  .mt-user-item-danger{color:var(--danger);}
+  .mt-user-item-danger:hover{background:var(--danger-soft);}
+
+  /* ---------- Desktop view toggle (forces a permanently-visible wide layout, e.g. on phones) ---------- */
+  body.force-desktop .sidebar{
+    display:flex !important;
+    position:static !important;
+    width:236px !important;flex:none !important;flex-direction:column !important;flex-wrap:nowrap !important;
+    padding:22px 16px !important;align-items:stretch !important;
+    box-shadow:none !important;
+  }
+  body.force-desktop .shell{display:flex !important;flex-direction:row !important;}
+  body.force-desktop .sidebar .brand{display:flex !important;border-bottom:1px solid rgba(255,255,255,.08) !important;margin-bottom:18px !important;padding:0 6px 22px 6px !important;width:auto !important;}
+  body.force-desktop .sidebar .role-tag{margin-bottom:18px !important;}
+  body.force-desktop .sidebar .spacer{display:block !important;}
+  body.force-desktop .sidebar .user-box{border-top:1px solid rgba(255,255,255,.08) !important;padding-top:14px !important;margin-top:8px !important;margin-right:0 !important;}
+  body.force-desktop .nav-item{margin-bottom:4px !important;}
+  body.force-desktop .main{padding:30px 34px !important;}
+  body.force-desktop table{font-size:13.4px !important;}
+  body.force-desktop .row{flex-direction:row !important;}
+  body.force-desktop .row .field, body.force-desktop .row .btn{width:auto !important;}
+  body.force-desktop{min-width:900px;}
+
+  @media (max-width:860px){
+    .sidebar{width:100%;left:0;right:0;padding:16px;}
+    .main{padding:14px 12px;}
+    .grid-2{grid-template-columns:1fr;}
+    .card{padding:16px;border-radius:12px;}
+    .row{flex-direction:column;align-items:stretch;}
+    .row .field{width:100%;min-width:0;}
+    .row .btn{width:100%;padding:13px 18px;}
+    .pager{flex-direction:column;align-items:stretch;}
+    .pager .pager-nav{justify-content:center;}
+    .pager .pager-nav button{width:38px;height:38px;}
+    .field input, .field textarea, .field select, .search-row input{font-size:16px;padding:12px 14px;}
+    .icon-btn{width:40px;height:40px;font-size:18px;}
+    .icon-btn-sm{width:34px;height:34px;font-size:16px;}
+    .btn-sm{padding:9px 14px;font-size:13.5px;}
+    .nav-item{padding:13px 12px;font-size:15px;}
+
+    /* Tables become stacked cards on phones -- no horizontal scrolling. */
+    table{font-size:13.5px;}
+    table thead{display:none;}
+    table, table tbody, table tr{display:block;width:100%;}
+    table tr{
+      background:var(--surface);border:1px solid var(--border);border-radius:12px;
+      margin-bottom:12px;padding:4px 14px;
+    }
+    table td{
+      display:flex;align-items:center;justify-content:space-between;gap:14px;
+      padding:11px 0;border-bottom:1px solid var(--border);
+      text-align:left;
+    }
+    table td:last-child{border-bottom:none;}
+    table td:empty{display:none;}
+    table td:before{
+      content:attr(data-label);
+      font-weight:700;color:var(--ink-soft);font-size:11.5px;flex:none;
+    }
+    table td:not([data-label]):before, table td[data-label=""]:before{content:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function(){
+  "use strict";
+
+  // ====== FIREBASE CONFIG ======
+  var firebaseConfig = {
+    apiKey: "AIzaSyCFI4CdRV6IwyjmifRjUlzzT_28I47vgh0",
+    authDomain: "companyportal-f52e0.firebaseapp.com",
+    projectId: "companyportal-f52e0",
+    storageBucket: "companyportal-f52e0.firebasestorage.app",
+    messagingSenderId: "314049949289",
+    appId: "1:314049949289:web:889ca48f03540261f5fcf8"
+  };
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.firestore();
+
+  var state = {
+    currentUser:null,
+    users:[],
+    bundles:[],
+    complaints:[],
+    rolls:[],
+    managerSales:{}, // { managerUsername: {total, count} } -- persisted independently of the bundles table
+    ntoSales:{}, // { ntoUsername: {total, count} } -- persisted independently of the bundles table
+    section:null,
+    loading:true,
+    loadError:false,
+    error:"",
+    unsubs:null,
+    modal:null, // {type:'process'|'resubmit', bundleId, previousStatus}
+    mySessionToken:null, // in-memory only; used for single-session manager enforcement
+    knownBundleIds:null,  // sentinel: null = not yet initialized, true = initialized
+    notifiedBundleIds:{}, // bundle.id -> true once this client has already rung/notified for it (avoids duplicate rings)
+    assignTimer:null,     // pending setTimeout handle, see scheduleAssignWindowRefresh()
+    forceDesktop:false,
+    mobileMenuOpen:false,
+    userMenuOpen:false,
+    pwError:'',
+    bundleSearch:'',
+    bundlePage:0,
+    userSearch:{manager:'', nto:''},
+    userPage:{manager:0, nto:0}
+  };
+  var PAGE_SIZE = 20;
+  // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
+  // manager who created that customer's account, before it opens up to all
+  // managers. This applies no matter what the bundle's current status is
+  // (pending/resubmit/in_process) -- see isBundleClaimableByManager() /
+  // findAssignedManager().
+  var ASSIGN_WAIT_MS = 40*1000; // 40 seconds
+
+  // ---------------- generic pagination helper ----------------
+  // Renders a "1-20 of 78" style pager with prev/next icons into containerEl.
+  // page: 0-based current page. total: total item count. onChange(newPage) is called on nav.
+  function renderPager(containerEl, page, total, onChange){
+    if(!containerEl) return;
+    if(total<=PAGE_SIZE){ containerEl.innerHTML=''; return; }
+    var pageCount = Math.ceil(total/PAGE_SIZE);
+    if(page>pageCount-1) page = pageCount-1;
+    var startN = total===0 ? 0 : (page*PAGE_SIZE)+1;
+    var endN = Math.min(total, (page+1)*PAGE_SIZE);
+    containerEl.innerHTML =
+      '<div class="pager">'+
+        '<div class="pager-info">'+startN+'-'+endN+' / '+total+'</div>'+
+        '<div class="pager-nav">'+
+          '<button data-pg="first" '+(page<=0?'disabled':'')+' title="لومړی">&#171;</button>'+
+          '<button data-pg="prev" '+(page<=0?'disabled':'')+' title="مخکینی">&#8250;</button>'+
+          '<span class="pager-page">'+(page+1)+' / '+pageCount+'</span>'+
+          '<button data-pg="next" '+(page>=pageCount-1?'disabled':'')+' title="راتلونکی">&#8249;</button>'+
+          '<button data-pg="last" '+(page>=pageCount-1?'disabled':'')+' title="وروستی">&#187;</button>'+
+        '</div>'+
+      '</div>';
+    Array.prototype.forEach.call(containerEl.querySelectorAll('[data-pg]'), function(btn){
+      btn.onclick = function(){
+        var which = btn.getAttribute('data-pg');
+        var np = page;
+        if(which==='first') np = 0;
+        else if(which==='prev') np = Math.max(0, page-1);
+        else if(which==='next') np = Math.min(pageCount-1, page+1);
+        else if(which==='last') np = pageCount-1;
+        onChange(np);
+      };
+    });
+  }
+
+  // Filters a list of objects by a search string across the given field names (case-insensitive).
+  function filterBySearch(list, query, fields){
+    var q = (query||'').trim().toLowerCase();
+    if(!q) return list;
+    return list.filter(function(item){
+      return fields.some(function(f){
+        var v = item[f];
+        return v!=null && String(v).toLowerCase().indexOf(q)!==-1;
+      });
+    });
+  }
+
+  // Binds a search input so typing filters+re-renders without losing focus/cursor position.
+  function bindSearchInput(inputId, getQuery, setQuery, rerenderFn){
+    var el = document.getElementById(inputId);
+    if(!el) return;
+    el.oninput = function(){
+      var pos = el.selectionStart;
+      setQuery(el.value);
+      rerenderFn();
+      var el2 = document.getElementById(inputId);
+      if(el2){
+        el2.focus();
+        try{ el2.setSelectionRange(pos, pos); }catch(e){}
+      }
+    };
+  }
+
+  // ---------------- storage helpers (Firestore) ----------------
+  // sGetDoc reports whether the read actually succeeded (ok:true/false),
+  // separately from whether the document simply has no data yet.
+  // This distinction matters: a failed read (offline, network blip, etc.)
+  // must NEVER be treated the same as "no data exists" -- doing so is what
+  // caused ensureSeed() to wipe out every manager/NTO account whenever a
+  // Firestore read hiccuped (see ensureSeed below).
+  function sGetDoc(name){
+    return db.collection('appdata').doc(name).get().then(function(snap){
+      return {ok:true, list:(snap.exists && snap.data().list) ? snap.data().list : null};
+    }).catch(function(err){
+      return {ok:false, list:null, err:err};
+    });
+  }
+  function sSetDoc(name, list){
+    return db.collection('appdata').doc(name).set({list:list});
+  }
+  function loadJSON(key, fallback){
+    return sGetDoc(key).then(function(res){ return res.ok ? (res.list || fallback) : fallback; });
+  }
+  function saveJSON(key, obj){
+    return sSetDoc(key, obj);
+  }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+  // ---------------- digit normalization (Pashto/Persian & Arabic-Indic numerals) ----------------
+  // Many phones default their keyboard to Pashto/Dari, which types numbers as
+  // ۰۱۲۳۴۵۶۷۸۹ (Extended Arabic-Indic, U+06F0-06F9) or ٠١٢٣٤٥٦٧٨٩ (Arabic-Indic,
+  // U+0660-0669) instead of plain 0-9. Every place in this app that reads a
+  // number (phone/reference numbers, and the amount typed inside a comment)
+  // must treat those the same as normal digits, or the value silently comes
+  // out as empty/zero.
+  function normalizeDigits(str){
+    if(str==null) return str;
+    return String(str).replace(/[\u06F0-\u06F9\u0660-\u0669]/g, function(ch){
+      var code = ch.charCodeAt(0);
+      if(code>=0x06F0 && code<=0x06F9) return String(code-0x06F0); // پښتو/دري ۰-۹
+      if(code>=0x0660 && code<=0x0669) return String(code-0x0660); // عربي ٠-٩
+      return ch;
+    });
+  }
+
+  // ---------------- session persistence (stay logged in across refresh/close) ----------------
+  var SESSION_KEY = 'roshanPortalSession';
+  var APP_BUILD_VERSION = document.querySelector('meta[name="app-build-version"]') ? document.querySelector('meta[name="app-build-version"]').getAttribute('content') : '1';
+  function saveSession(){
+    try{
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        username: state.currentUser.username,
+        sessionToken: state.mySessionToken || null,
+        buildVersion: APP_BUILD_VERSION
+      }));
+    }catch(e){}
+  }
+  function clearSavedSession(){
+    try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  }
+  function restoreSession(){
+    var raw;
+    try{ raw = localStorage.getItem(SESSION_KEY); }catch(e){ raw = null; }
+    if(!raw) return;
+    var saved;
+    try{ saved = JSON.parse(raw); }catch(e){ return; }
+    if(!saved || !saved.username) return;
+    // Force a fresh login after a deployed code version changes. This prevents
+    // an old authenticated session from continuing with stale role/UI logic.
+    if(saved.buildVersion !== APP_BUILD_VERSION){ clearSavedSession(); return; }
+    var u = state.users.find(function(x){ return x.username===saved.username; });
+    if(!u || u.status==='disabled'){ clearSavedSession(); return; }
+    state.currentUser = {username:u.username, role:u.role};
+    state.mySessionToken = saved.sessionToken || null;
+    state.section = MENUS[u.role][0].key;
+  }
+
+  // ---------------- data bootstrap ----------------
+  var DEFAULT_ADMIN_USER = 'admin@roshan.af';
+  var DEFAULT_ADMIN_PASS = 'Roshan.af.admin@af&786';
+
+  function ensureSeed(){
+    return sGetDoc('users').then(function(res){
+      if(!res.ok){
+        // The read itself failed (offline/network/permission hiccup) --
+        // we do NOT know whether real accounts exist on the server, so we
+        // must not seed/overwrite anything here. Bubble this up as a
+        // rejection so loadAll() can retry instead of wiping real data.
+        return Promise.reject(res.err || new Error('users-read-failed'));
+      }
+      var users = res.list;
+      if(users && users.length){
+        state.users = users;
+        var legacy = state.users.find(function(u){return u.username==='admin' && u.role==='admin';});
+        if(legacy){
+          legacy.username = DEFAULT_ADMIN_USER;
+          legacy.password = DEFAULT_ADMIN_PASS;
+          return persistUsers();
+        }
+        return;
+      }
+      // The read succeeded AND the users doc is genuinely empty/missing --
+      // this only happens on the very first run, so it's safe to seed.
+      var seeded = [{username:DEFAULT_ADMIN_USER, password:DEFAULT_ADMIN_PASS, role:'admin', status:'enabled', createdBy:'system'}];
+      state.users = seeded;
+      return saveJSON('users', seeded);
+    });
+  }
+
+  // ---------------- REPAIR/MIGRATION: rebuild sales reports from approved bundles ----------------
+  // Older approved bundles were saved in the bundles table but some of them
+  // were never added to managerSales/ntoSales. On first load after this build,
+  // rebuild both reports from ALL approved bundles exactly once. This also
+  // prevents duplicate counting of old approvals. A Firestore transaction is
+  // used so a simultaneous approval cannot leave the migration half-applied.
+  var SALES_MIGRATION_KEY = 'approved-bundle-sales-v1';
+  function migrateApprovedBundleSales(){
+    return db.collection('appdata').doc('salesTotals').get().then(function(snap){
+      var d = snap.exists ? (snap.data() || {}) : {};
+      if(d._migrations && d._migrations[SALES_MIGRATION_KEY]) return;
+
+      return db.runTransaction(function(tx){
+        var bundlesRef = db.collection('appdata').doc('bundles');
+        var totalsRef = db.collection('appdata').doc('salesTotals');
+        return Promise.all([tx.get(bundlesRef), tx.get(totalsRef)]).then(function(reads){
+          var bundlesSnap = reads[0];
+          var totalsSnap = reads[1];
+          var totals = totalsSnap.exists ? (totalsSnap.data() || {}) : {};
+          if(totals._migrations && totals._migrations[SALES_MIGRATION_KEY]) return;
+
+          var list = (bundlesSnap.exists && bundlesSnap.data().list) ? bundlesSnap.data().list : [];
+          var managerSales = {};
+          var ntoSales = {};
+
+          list.forEach(function(b){
+            if(!b || b.status!=='approved') return;
+            var amt = extractNumber(b.comment);
+            var ntoUser = b.ntoUsername;
+            var mgrUser = b.actionedBy || findAssignedManager(ntoUser);
+
+            if(ntoUser){
+              if(!ntoSales[ntoUser]) ntoSales[ntoUser] = {total:0, count:0};
+              ntoSales[ntoUser].total += amt;
+              ntoSales[ntoUser].count += 1;
+            }
+            if(mgrUser){
+              if(!managerSales[mgrUser]) managerSales[mgrUser] = {total:0, count:0};
+              managerSales[mgrUser].total += amt;
+              managerSales[mgrUser].count += 1;
+            }
+          });
+
+          var migrations = totals._migrations || {};
+          migrations[SALES_MIGRATION_KEY] = {completedAt:Date.now(), bundleCount:list.filter(function(b){return b && b.status==='approved';}).length};
+          tx.set(totalsRef, {managerSales:managerSales, ntoSales:ntoSales, _migrations:migrations}, {merge:true});
+        });
+      }).then(function(){
+        state.managerSales = {};
+        state.ntoSales = {};
+        return db.collection('appdata').doc('salesTotals').get();
+      }).then(function(snap2){
+        if(snap2.exists){
+          var d2=snap2.data()||{};
+          state.managerSales=d2.managerSales||{};
+          state.ntoSales=d2.ntoSales||{};
+        }
+      });
+    });
+  }
+
+  function rebuildSalesTotalsOnce(){
+    var MIGRATION_VERSION = 3;
+    return db.collection('appdata').doc('salesTotals').get().then(function(snap){
+      var data=snap.exists?(snap.data()||{}):{};
+      if(data.salesRebuildVersion===MIGRATION_VERSION) return;
+      var mt={}, nt={};
+      state.bundles.forEach(function(b){
+        if(b.status!=='approved') return;
+        var amt=extractNumber(b.comment||'');
+        var n=b.ntoUsername;
+        if(n){if(!nt[n])nt[n]={total:0,count:0}; nt[n].total+=amt; nt[n].count++;}
+        var m=null;
+        if(b.actionedBy){var au=state.users.find(function(u){return u.username===b.actionedBy&&u.role==='manager';}); if(au)m=au.username;}
+        if(!m)m=findAssignedManager(n);
+        if(!m&&b.processingBy){var pu=state.users.find(function(u){return u.username===b.processingBy&&u.role==='manager';});if(pu)m=pu.username;}
+        if(m){if(!mt[m])mt[m]={total:0,count:0};mt[m].total+=amt;mt[m].count++;}
+      });
+      state.managerSales=mt; state.ntoSales=nt;
+      return db.collection('appdata').doc('salesTotals').set({managerSales:mt,ntoSales:nt,salesRebuildVersion:MIGRATION_VERSION},{merge:true});
+    });
+  }
+
+  function loadAllOnce(){
+    return Promise.all([
+      ensureSeed(),
+      loadJSON('bundles', []).then(function(v){ state.bundles = v; }),
+      loadJSON('complaints', []).then(function(v){ state.complaints = v; }),
+      loadJSON('rolls', []).then(function(v){ state.rolls = v; }),
+      db.collection('appdata').doc('salesTotals').get().then(function(snap){
+        return {ok:true, exists:snap.exists, data: snap.exists ? snap.data() : null};
+      }).catch(function(err){
+        return {ok:false, exists:false, data:null, err:err};
+      }).then(function(res){
+        if(!res.ok){ return Promise.reject(res.err || new Error('salesTotals-read-failed')); }
+        state.managerSales = (res.data && res.data.managerSales) ? res.data.managerSales : {};
+        state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
+      })
+    ]).then(function(){ return rebuildSalesTotalsOnce(); });
+  }
+
+  // Retries the initial load a few times (with a short delay) before giving
+  // up and showing an error screen. This protects against transient
+  // network/Firestore hiccups being mistaken for "no data exists yet".
+  function loadAll(retriesLeft){
+    if(retriesLeft===undefined) retriesLeft = 5;
+    return loadAllOnce().then(function(){
+      state.loadError = false;
+    }).catch(function(err){
+      if(retriesLeft<=0){
+        state.loadError = true;
+        return;
+      }
+      return new Promise(function(resolve){ setTimeout(resolve, 1500); }).then(function(){
+        return loadAll(retriesLeft-1);
+      });
+    });
+  }
+
+  function persistUsers(){ return saveJSON('users', state.users); }
+  function persistBundles(){ return saveJSON('bundles', state.bundles); }
+  function persistComplaints(){ return saveJSON('complaints', state.complaints); }
+  function persistRolls(){ return saveJSON('rolls', state.rolls); }
+  function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales}); }
+
+  // ---------------- role menu config ----------------
+  var MENUS = {
+    admin:[
+      {key:'managers', label:'مديران'},
+      {key:'ntos', label:'مشتريان'},
+      {key:'sales', label:'بنډلونه'},
+      {key:'report', label:'راپور-مدير'},
+      {key:'nto_report', label:'راپور-مشتري'},
+      {key:'rolls', label:'پيغام استول'},
+      {key:'complaints', label:'شکایتونه'}
+    ],
+    manager:[
+      {key:'ntos', label:'مشتريان'},
+      {key:'sales', label:'بنډلونه'},
+      {key:'report', label:'فروشات'},
+      {key:'nto_report', label:'راپور-مشتري'}
+    ],
+    nto:[
+      {key:'bundle', label:'نوى بنډل استول'},
+      {key:'deactivate', label:'بنډل غيري فعالول'},
+      {key:'sales', label:'بنډلونه'},
+      {key:'report', label:'فروشاتو راپور'},
+      {key:'complaints', label:'شکایت استول'}
+    ]
+  };
+  var ROLE_LABEL = {admin:'اډمین', manager:'منیجر', nto:'مشتري'};
+
+  // ---------------- render root ----------------
+  function render(){
+    var root = document.getElementById('app');
+    if(state.loading){
+      root.innerHTML = '<div class="login-wrap"><div class="login-card"><p class="sub">بار کیږي...</p></div></div>';
+      renderModalLayer();
+      return;
+    }
+    if(state.loadError){
+      root.innerHTML =
+        '<div class="blocked-wrap"><div class="blocked-card">'+
+          '<div class="icon">&#9888;</div>'+
+          '<h3 style="direction:rtl;">له سرور سره وصل کیدل ونشول</h3>'+
+          '<p style="direction:rtl;">ستاسو انټرنېټ یا Firestore سره اړیکه ونشوه. مهرباني وکړئ خپل انټرنېټ وګورئ او بیا هڅه وکړئ. (د خوندیتوب لپاره، تر هغه چې اړیکه بیرته رغیږي، هیڅ معلومات به نه بدلیږي.)</p>'+
+          '<button class="btn btn-ghost" id="le-retry" style="margin-top:18px;">بیا هڅه</button>'+
+        '</div></div>';
+      var retryBtn = document.getElementById('le-retry');
+      if(retryBtn){
+        retryBtn.onclick = function(){
+          state.loading = true;
+          render();
+          loadAll().then(function(){
+            restoreSession();
+            state.loading = false;
+            render();
+          });
+        };
+      }
+      renderModalLayer();
+      return;
+    }
+    if(!state.currentUser){
+      renderLogin(root);
+      renderModalLayer();
+      return;
+    }
+    var fresh = state.users.find(function(u){return u.username===state.currentUser.username;});
+    if(!fresh || fresh.status==='disabled'){
+      renderBlocked(root);
+      renderModalLayer();
+      return;
+    }
+    if(fresh.role==='manager' && state.mySessionToken && fresh.sessionToken && fresh.sessionToken!==state.mySessionToken){
+      renderSessionReplaced(root);
+      renderModalLayer();
+      return;
+    }
+    renderDashboard(root);
+    renderModalLayer();
+  }
+
+  // ---------------- LOGIN VIEW ----------------
+  function renderLogin(root){
+    root.innerHTML =
+      '<div class="login-wrap"><div class="login-card">'+
+        '<div class="login-brand"><div class="mark"></div><span>روشن-نزديک شدن</span></div>'+
+        '<p class="sub">دننه کیدو لپاره خپل یوزر نوم او پاسورډ ولیکئ</p>'+
+        (state.error ? '<div class="error-box">'+escapeHtml(state.error)+'</div>' : '')+
+        '<div class="field"><label>یوزرنوم</label><input id="li-user" type="text" autocomplete="username"></div>'+
+        '<div class="field"><label>پاسورډ</label><input id="li-pass" type="password" autocomplete="current-password"></div>'+
+        '<button class="btn btn-primary btn-block" id="li-btn">دننه شئ</button>'+
+      '</div></div>';
+
+    document.getElementById('li-btn').onclick = doLogin;
+    document.getElementById('li-pass').addEventListener('keydown', function(e){
+      if(e.key==='Enter') doLogin();
+    });
+  }
+
+  function doLogin(){
+    var u = document.getElementById('li-user').value.trim();
+    var p = document.getElementById('li-pass').value;
+    if(!u || !p){
+      state.error = 'مهرباني وکړئ یوزر نوم او پاسورډ دواړه ولیکئ.';
+      render(); return;
+    }
+    var found = state.users.find(function(x){return x.username===u;});
+    if(!found || found.password!==p){
+      state.error = 'یوزر نوم یا پاسورډ سم نه دی.';
+      render(); return;
+    }
+    state.error='';
+    state.currentUser = {username:found.username, role:found.role};
+    state.section = MENUS[found.role][0].key;
+    if(found.role==='manager'){
+      var tok = uid();
+      found.sessionToken = tok;
+      state.mySessionToken = tok;
+      persistUsers();
+    }
+    saveSession();
+    requestNotificationPermission();
+    render();
+  }
+
+  function doLogout(){
+    state.currentUser = null;
+    state.section = null;
+    state.modal = null;
+    state.userMenuOpen = false;
+    state.mySessionToken = null;
+    clearSavedSession();
+    render();
+  }
+
+  // ---------------- BLOCKED VIEW ----------------
+  function renderBlocked(root){
+    root.innerHTML =
+      '<div class="blocked-wrap"><div class="blocked-card">'+
+        '<div class="icon">&#9888;</div>'+
+        '<h3 style="direction:rtl;">ستاسو دننه کیدل بند شوي دي</h3>'+
+        '<p>Your user has been disabled by the Admin. Please contact them.</p>'+
+        '<button class="btn btn-ghost" id="bk-back" style="margin-top:18px;">بیرته لاگ-این ته</button>'+
+      '</div></div>';
+    document.getElementById('bk-back').onclick = function(){
+      state.currentUser = null;
+      clearSavedSession();
+      render();
+    };
+  }
+
+  // ---------------- SESSION REPLACED VIEW (manager single-session) ----------------
+  function renderSessionReplaced(root){
+    root.innerHTML =
+      '<div class="blocked-wrap"><div class="blocked-card">'+
+        '<div class="icon">&#9888;</div>'+
+        '<h3 style="direction:rtl;">ستاسو حساب په بل ځای کې دننه شوی</h3>'+
+        '<p style="direction:rtl;">ستاسو منیجر حساب په بل ډیوایس یا براوزر کې دننه شوی، نو دلته له سیسټم څخه وایستل شوئ.</p>'+
+        '<button class="btn btn-ghost" id="sr-back" style="margin-top:18px;">بیرته لاگ-این ته</button>'+
+      '</div></div>';
+    document.getElementById('sr-back').onclick = function(){
+      state.currentUser = null;
+      state.mySessionToken = null;
+      clearSavedSession();
+      render();
+    };
+  }
+
+  // ---------------- DASHBOARD SHELL ----------------
+  function renderDashboard(root){
+    var role = state.currentUser.role;
+    var menu = MENUS[role];
+    if(!state.section || !menu.find(function(m){return m.key===state.section;})){
+      state.section = menu[0].key;
+    }
+
+    var actionableCount = state.bundles.filter(function(b){
+      if(b.status!=='pending' && b.status!=='resubmit') return false;
+      if(role==='manager') return isBundleClaimableByManager(b, state.currentUser.username);
+      return true;
+    }).length;
+    var myUnseen = state.bundles.filter(function(b){
+      return b.ntoUsername===state.currentUser.username && (b.status==='approved'||b.status==='rejected') && !b.ntoSeen;
+    }).length;
+
+    var navHtml = menu.map(function(m){
+      var badge = '';
+      if(m.key==='sales'){
+        if((role==='admin'||role==='manager') && actionableCount>0){
+          badge = '<span class="nav-badge">'+actionableCount+'</span>';
+        }else if(role==='nto' && myUnseen>0){
+          badge = '<span class="nav-badge">'+myUnseen+'</span>';
+        }
+      }
+      return '<div class="nav-item '+(state.section===m.key?'active':'')+'" data-sec="'+m.key+'">'+
+        '<span>'+m.label+'</span>'+badge+'</div>';
+    }).join('');
+
+    var canChangePw = role==='manager';
+    var userMenuHtml = '';
+    if(state.userMenuOpen){
+      userMenuHtml =
+        '<div class="mt-user-dropdown">'+
+          (role!=='nto' ? '<button class="mt-user-item" id="um-desktop">'+(state.forceDesktop?'&#128241; موبایل لید':'&#128421; ډیسک-ټاپ لید')+'</button>' : '')+
+          (canChangePw ? '<button class="mt-user-item" id="um-changepw">&#128273; پاسورډ بدلول</button>' : '')+
+          '<button class="mt-user-item mt-user-item-danger" id="um-logout">&#128682; وتل (Logout)</button>'+
+        '</div>';
+    }
+
+    root.innerHTML =
+      '<div class="mobile-topbar">'+
+        '<button class="hamburger-btn" id="mobile-menu-btn">&#9776;</button>'+
+        '<span class="mt-title">روشن-نزديک شدن</span>'+
+        '<div class="mt-user-wrap" id="mt-user-wrap">'+
+          '<button class="mt-user-btn" id="mt-user-btn"><span class="mt-user-name">'+escapeHtml(state.currentUser.username)+'</span><span class="mt-caret">&#9662;</span></button>'+
+          userMenuHtml+
+        '</div>'+
+      '</div>'+
+      '<div class="shell">'+
+        '<div class="sidebar-backdrop'+(state.mobileMenuOpen?' show':'')+'" id="sidebar-backdrop"></div>'+
+        '<div class="sidebar'+(state.mobileMenuOpen?' mobile-open':'')+'">'+
+          '<div class="brand"><div class="mark"></div><b>روشن-نزديک شدن</b></div>'+
+          '<div class="role-tag">'+ROLE_LABEL[role]+'</div>'+
+          '<div style="display:flex;flex-direction:column;gap:2px;flex:1;">'+navHtml+'</div>'+
+          '<div class="spacer"></div>'+
+        '</div>'+
+        '<div class="main" id="main-area"></div>'+
+      '</div>';
+
+    var mmBtn = document.getElementById('mobile-menu-btn');
+    if(mmBtn){
+      mmBtn.onclick = function(){
+        state.mobileMenuOpen = !state.mobileMenuOpen;
+        renderDashboard(document.getElementById('app'));
+      };
+    }
+    var backdrop = document.getElementById('sidebar-backdrop');
+    if(backdrop){
+      backdrop.onclick = function(){
+        state.mobileMenuOpen = false;
+        renderDashboard(document.getElementById('app'));
+      };
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.nav-item'), function(el){
+      el.onclick = function(){
+        state.section = el.getAttribute('data-sec');
+        state.mobileMenuOpen = false;
+        if(state.section==='sales' && role==='nto'){
+          state.bundles.forEach(function(b){
+            if(b.ntoUsername===state.currentUser.username && (b.status==='approved'||b.status==='rejected')) b.ntoSeen = true;
+          });
+          persistBundles();
+        }
+        render();
+      };
+    });
+
+    var userBtn = document.getElementById('mt-user-btn');
+    if(userBtn){
+      userBtn.onclick = function(e){
+        e.stopPropagation();
+        state.userMenuOpen = !state.userMenuOpen;
+        renderDashboard(document.getElementById('app'));
+      };
+    }
+    var umDesktop = document.getElementById('um-desktop');
+    if(umDesktop){
+      umDesktop.onclick = function(){
+        state.userMenuOpen = false;
+        state.modal = {type:'confirm-desktop'};
+        render();
+      };
+    }
+    var umChangePw = document.getElementById('um-changepw');
+    if(umChangePw){
+      umChangePw.onclick = function(){
+        state.userMenuOpen = false;
+        state.pwError = '';
+        state.modal = {type:'change-password'};
+        render();
+      };
+    }
+    var umLogout = document.getElementById('um-logout');
+    if(umLogout){
+      umLogout.onclick = function(){
+        state.userMenuOpen = false;
+        state.modal = {type:'confirm-logout'};
+        render();
+      };
+    }
+
+    renderSection(document.getElementById('main-area'));
+  }
+
+  function sectionTitle(key){
+    var map = {bundle:'نوى بنډل-استول', deactivate:'بنډل-غيري فعالول', managers:'مدير-حسابونه', ntos:'مشتري-اضافه کول', sales:'بنډلونو-حالت', report:'فروشاتو -راپور', nto_report:'مشتري-راپور', rolls:'پيغام-استول', complaints:'راليږل شوي شکایتونه'};
+    return map[key] || '';
+  }
+
+  // ---------------- ADMIN: DOWNLOAD ANY PAGE AS EXCEL ----------------
+  // Adds a download icon to admin-only pages that do not already have one.
+  function addAdminPageExport(headerRow, section){
+    if(!headerRow || !state.currentUser || state.currentUser.role!=='admin') return;
+    if(headerRow.querySelector('[data-admin-page-export]')) return;
+    var wrap = headerRow.querySelector('.header-actions');
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.className = 'header-actions';
+      headerRow.appendChild(wrap);
+    }
+    var btn = document.createElement('button');
+    btn.className = 'icon-btn';
+    btn.setAttribute('data-admin-page-export','1');
+    btn.title = 'اکسیل ډاونلوډ';
+    btn.innerHTML = '&#128190;';
+    wrap.appendChild(btn);
+    btn.onclick = function(){ exportAdminSection(section); };
+  }
+
+  function exportAdminSection(section){
+    var data = [];
+    var sheet = section;
+    if(section==='managers'){
+      data = state.users.filter(function(u){return u.role==='manager';}).map(function(u){
+        return {'یوزر-نوم':u.username,'حالت':u.status==='enabled'?'فعال':'غیر فعال'};
+      });
+      sheet='Managers';
+    }else if(section==='ntos'){
+      data = state.users.filter(function(u){return u.role==='nto';}).map(function(u){
+        return {'یوزر-نوم':u.username,'ادرس':u.address||'','اړیکې شمیره':u.contact||'','جوړونکی':u.createdBy||'','حالت':u.status==='enabled'?'فعال':'غیر فعال'};
+      });
+      sheet='Customers';
+    }else if(section==='rolls'){
+      data = state.rolls.map(function(r){ return {'پیغام':r.text,'جوړونکی':r.createdBy||'','نیټه':fmtDate(r.createdAt)}; });
+      sheet='Messages';
+    }else if(section==='complaints'){
+      data = state.complaints.map(function(c){ return {'مشتري':c.fromUsername||'','شکایت':c.text||'','نیټه':fmtDate(c.createdAt)}; });
+      sheet='Complaints';
+    }else return;
+    if(!data.length){ showToast('هیڅ معلومات نشته چې ډاونلوډ شي.'); return; }
+    try{
+      var ws = XLSX.utils.json_to_sheet(data);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheet);
+      XLSX.writeFile(wb, section+'-'+Date.now()+'.xlsx');
+    }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
+  }
+
+  function renderSection(main){
+    var role = state.currentUser.role;
+    main.innerHTML = '<div class="main-header" id="main-header-row"><div><h2>'+sectionTitle(state.section)+'</h2></div></div><div id="sec-body"></div>';
+    var headerRow = document.getElementById('main-header-row');
+    var body = document.getElementById('sec-body');
+
+    if(state.section==='bundle' && role==='nto') return renderBundleSection(body);
+    if(state.section==='deactivate' && role==='nto') return renderDeactivateSection(body);
+    if(state.section==='managers' && role==='admin'){ renderUsersSection(body, 'manager', true, true, role); if(role==='admin') addAdminPageExport(headerRow, 'managers'); return; }
+    if(state.section==='ntos' && (role==='admin'||role==='manager')){ renderUsersSection(body, 'nto', role==='admin', role==='admin', role); if(role==='admin') addAdminPageExport(headerRow, 'ntos'); return; }
+    if(state.section==='sales') return renderSalesSection(body, role, headerRow);
+    if(state.section==='report') return renderReportSection(body, role, headerRow);
+    if(state.section==='nto_report' && (role==='admin'||role==='manager')) return renderNtoReportSection(body, headerRow, role);
+    if(state.section==='rolls' && role==='admin'){ renderRollsSection(body); addAdminPageExport(headerRow, 'rolls'); return; }
+    if(state.section==='complaints') { renderComplaintsSection(body, role); if(role==='admin') addAdminPageExport(headerRow, 'complaints'); return; }
+
+    body.innerHTML = '<div class="empty-state">لاسرسی نشته.</div>';
+  }
+
+  // ---------------- BUNDLE SECTION (NTO only) ----------------
+  function renderBundleSection(body){
+    var myBundles = state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username;});
+    body.innerHTML =
+      '<div class="card">'+
+        '<h4>نوی بنډل واستوئ</h4>'+
+        '<div class="row">'+
+          '<div class="field"><label>شمیره</label><input id="bd-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
+          '<div class="field"><label>د بنډل نوم</label><input id="bd-f2" type="text" placeholder="د بنډل نوم ولیکئ"></div>'+
+          '<button class="btn btn-gold" id="bd-submit">واستوئ</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="card"><h4>ستاسو د بنډل تاریخچه</h4><div id="bd-list"></div></div>';
+
+    var f1 = document.getElementById('bd-f1');
+    f1.addEventListener('input', function(){
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      v = v.replace(/^0+(?=\d)/,'');
+      f1.value = v;
+    });
+
+    document.getElementById('bd-submit').onclick = function(){
+      var v1 = f1.value.trim();
+      var v2 = document.getElementById('bd-f2').value.trim();
+      if(!v1 || !v2){ showToast('مهرباني وکړئ دواړه خانې ډکې کړئ.'); return; }
+      var entry = {
+        id: uid(),
+        ntoUsername: state.currentUser.username,
+        field1:v1, field2:v2,
+        status: 'pending',
+        createdAt: Date.now(),
+        waitStartAt: Date.now(),
+        comment:null, actionedBy:null, actionedAt:null, processingBy:null,
+        ntoSeen: true
+      };
+      state.bundles.unshift(entry);
+      persistBundles().then(function(){
+        showToast('بنډل واستول شو، اوس د تمې په حالت کې دی.');
+        state.section = 'sales';
+        renderDashboard(document.getElementById('app'));
+      });
+    };
+
+    var list = document.getElementById('bd-list');
+    if(!myBundles.length){
+      list.innerHTML = '<div class="empty-state">تر اوسه هیڅ بنډل نه دی استول شوی.</div>';
+    }else{
+      list.innerHTML = '<table><thead><tr><th>شمیره</th><th>د بنډل نوم</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
+        myBundles.map(function(b){
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="د بنډل نوم">'+escapeHtml(b.field2)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
+        }).join('')+
+      '</tbody></table>';
+    }
+  }
+
+  // ---------------- BUNDLE DEACTIVATION SECTION (NTO only) ----------------
+  function renderDeactivateSection(body){
+    var myRequests = state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username && b.type==='deactivate';});
+    body.innerHTML =
+      '<div class="card">'+
+        '<h4>د بنډلونو د غیري فعالولو لپاره شمیره ولیکئ</h4>'+
+        '<div class="row">'+
+          '<div class="field"><label>شمیره</label><input id="dz-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
+          '<button class="btn btn-gold" id="dz-submit">واستوئ</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="card"><h4>ستاسو د غیري فعالولو غوښتنې</h4><div id="dz-list"></div></div>';
+
+    var f1 = document.getElementById('dz-f1');
+    f1.addEventListener('input', function(){
+      var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
+      v = v.replace(/^0+(?=\d)/,'');
+      f1.value = v;
+    });
+
+    document.getElementById('dz-submit').onclick = function(){
+      var v1 = f1.value.trim();
+      if(!v1){ showToast('مهرباني وکړئ شمیره ولیکئ.'); return; }
+      var entry = {
+        id: uid(),
+        ntoUsername: state.currentUser.username,
+        field1:v1, field2:'بنډلونه غیري فعاله کړئ',
+        type:'deactivate',
+        status: 'pending',
+        createdAt: Date.now(),
+        waitStartAt: Date.now(),
+        comment:null, actionedBy:null, actionedAt:null, processingBy:null,
+        ntoSeen: true
+      };
+      state.bundles.unshift(entry);
+      persistBundles().then(function(){
+        showToast('غوښتنه واستول شوه، اوس د تمې په حالت کې ده.');
+        state.section = 'sales';
+        renderDashboard(document.getElementById('app'));
+      });
+    };
+
+    var list = document.getElementById('dz-list');
+    if(!myRequests.length){
+      list.innerHTML = '<div class="empty-state">تر اوسه هیڅ غوښتنه نه ده استول شوې.</div>';
+    }else{
+      list.innerHTML = '<table><thead><tr><th>شمیره</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
+        myRequests.map(function(b){
+          return '<tr><td data-label="شمیره">'+escapeHtml(b.field1)+'</td><td data-label="حالت">'+statusBadge(b.status)+'</td><td data-label="نیټه">'+fmtDateHtml(b.createdAt)+'</td></tr>';
+        }).join('')+
+      '</tbody></table>';
+    }
+  }
+
+  // ---------------- SALES REPORT SECTION ----------------
+  function renderSalesSection(body, role, headerRow){
+    if(role==='manager') scheduleAssignWindowRefresh();
+    var allRows = role==='nto' ? state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username;}) : state.bundles.slice();
+    if(role==='manager'){
+      // A bundle that's still within its assignment window and belongs to a
+      // different manager's customer is completely hidden from this
+      // manager's bundle page -- not just non-clickable -- until the window
+      // elapses or it becomes theirs. Everything else (already
+      // approved/rejected/etc., or unassigned customers) stays visible.
+      allRows = allRows.filter(function(b){
+        if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
+        return isBundleClaimableByManager(b, state.currentUser.username);
+      });
+    }
+    var rows = filterBySearch(allRows, state.bundleSearch, ['ntoUsername','field1','field2','comment','actionedBy']);
+    // Resubmitted bundles are pinned to the very top of the list for every
+    // role (admin/manager/nto), most-recently-resubmitted first. Everything
+    // else keeps its existing relative order (Array#sort is stable).
+    rows = rows.slice().sort(function(a,b){
+      var ar = a.status==='resubmit' ? 1 : 0;
+      var br = b.status==='resubmit' ? 1 : 0;
+      if(ar!==br) return br-ar;
+      if(ar===1 && br===1) return (b.waitStartAt||b.createdAt||0) - (a.waitStartAt||a.createdAt||0);
+      return 0;
+    });
+    var canProcess = (role==='admin' || role==='manager');
+
+    if(headerRow && (role==='admin' || role==='manager')){
+      headerRow.innerHTML =
+        '<div><h2>'+sectionTitle('sales')+'</h2></div>'+
+        '<div class="header-actions">'+
+          '<button class="icon-btn" id="sales-export" title="اکسیل ډاونلوډ">&#128190;</button>'+
+          (role==='admin' ? '<button class="icon-btn" id="sales-reset" title="ریسیټ">&#8635;</button>' : '')+
+        '</div>';
+
+      document.getElementById('sales-export').onclick = function(){
+        if(!rows.length){ showToast('هیڅ معلومات نشته چې ډاونلوډ شي.'); return; }
+        var data = rows.map(function(b){
+          var o = {};
+          o['مشتري نوم'] = b.ntoUsername;
+          o['اړيکې شميره'] = b.field1;
+          o['بنډل نوم'] = b.field2;
+          o['حالت'] = statusLabel(b.status);
+          o['تائيد-مدير'] = b.actionedBy || '';
+          o['يادونه-شوې'] = b.comment || '';
+          o['نیټه'] = fmtDate(b.createdAt);
+          return o;
+        });
+        try{
+          var ws = XLSX.utils.json_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'SalesReport');
+          XLSX.writeFile(wb, 'sales-report-'+Date.now()+'.xlsx');
+        }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
+      };
+
+      if(role==='admin'){
+        document.getElementById('sales-reset').onclick = function(){
+          var ok = window.confirm('آیا ډاډه یاست چې غواړئ د بنډلونو ټوله جدول (لیست) ړنګ کړئ؟ د مدیرانو او مشتریانو د فروشاتو ټوله شمیرې به اغیزمنې نشي، یوازې دا جدول به پاک شي. دا کار بیرته نشي کیدلی.');
+          if(!ok) return;
+          state.bundles = [];
+          persistBundles().then(function(){
+            showToast('ټول د بنډل معلومات پاک شول.');
+            renderDashboard(document.getElementById('app'));
+          });
+        };
+      }
+    }
+
+    if(!allRows.length){
+      body.innerHTML = '<div class="card"><div class="empty-state">هیڅ ثبت شوی معلومات نشته.</div></div>';
+      return;
+    }
+
+    var pageCount = Math.max(1, Math.ceil(rows.length/PAGE_SIZE));
+    if(state.bundlePage>pageCount-1) state.bundlePage = pageCount-1;
+    if(state.bundlePage<0) state.bundlePage = 0;
+    var pageRows = rows.slice(state.bundlePage*PAGE_SIZE, (state.bundlePage+1)*PAGE_SIZE);
+
+    var searchHtml = '<div class="search-row"><input id="bundle-search" type="text" placeholder="د مشتري نوم، شمیره یا بنډل ولټوئ..." value="'+escapeHtml(state.bundleSearch)+'"><span class="search-icon">&#128269;</span></div>';
+
+    if(!rows.length){
+      body.innerHTML = '<div class="card">'+searchHtml+'<div class="empty-state">ستاسو د لټون سره سم هیڅ معلومات ونه موندل شول.</div></div>';
+      bindSearchInput('bundle-search', function(){return state.bundleSearch;}, function(v){state.bundleSearch=v; state.bundlePage=0;}, function(){ renderSalesSection(body, role, headerRow); });
+      return;
+    }
+    body.innerHTML = '<div class="card">'+searchHtml+'<div style="overflow-x:auto;"><table><thead><tr>'+
+      (role!=='nto' ? '<th>مشتري-نوم</th>' : '')+
+      '<th>اړيکې-شمیره</th><th>بنډل-نوو</th><th>حالت</th>'+
+      (canProcess ? '<th>تائيد کوونکى-مدير</th>' : '')+
+      '<th>يادونه-شوې</th>'+
+      '<th>نیټه</th>'+
+      (role==='nto' ? '<th></th>' : '')+
+      '</tr></thead><tbody>'+
+      pageRows.map(function(b){
+        var statusCell = statusBadge(b.status);
+        if(canProcess && (b.status==='pending' || b.status==='resubmit')){
+          statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'">'+statusLabel(b.status)+'</span>';
+        }else if(canProcess && b.status==='in_process'){
+          // While a bundle is in process, NO manager may open/click it.
+          // It becomes clickable again only after it returns to pending/resubmit
+          // (for example when the current manager presses "لغوه کول").
+          if(role==='admin'){
+            statusCell = '<span class="badge clickable '+badgeClass(b.status)+'" data-open-process="'+b.id+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې اوس پروسس کوي':'')+'">'+statusLabel(b.status)+'</span>';
+          }else{
+            statusCell = '<span class="badge '+badgeClass(b.status)+'" title="'+(b.processingBy?escapeHtml(b.processingBy)+' یې پروسس کوي':'')+'">'+statusLabel(b.status)+'</span>';
+          }
+        }
+        // For a manager, the full number (and its copy button) is only shown
+        // once the bundle is approved ("فعاله شوو"). Every other status
+        // masks the last 3 digits and hides the copy button. Admin always
+        // sees the full number/button as before.
+        var maskForManager = (role==='manager' && b.status!=='approved' && b.status!=='rejected' && b.status!=='deactivated');
+        var numberDisplay = maskForManager ? maskLast3Digits(b.field1) : escapeHtml(b.field1);
+        var copyBtn = (role==='manager' && !maskForManager) ? ' <button class="icon-btn-copy" data-copy="'+escapeHtml(b.field1)+'" title="کاپي کول">&#128203;</button>' : '';
+        // Resubmitted rows show the resubmit date/time instead of the
+        // original submission date/time.
+        var dateVal = (b.status==='resubmit' && b.waitStartAt) ? b.waitStartAt : b.createdAt;
+        var dateCell = fmtDateHtml(dateVal);
+        if(role==='admin'){
+          dateCell = '<button class="icon-btn-sm" data-delete-bundle="'+b.id+'" title="ړنګول" style="margin-left:6px;">&#128465;</button>'+dateCell;
+        }
+        return '<tr>'+
+          (role!=='nto' ? '<td data-label="مشتري-نوم">'+escapeHtml(b.ntoUsername)+'</td>' : '')+
+          '<td data-label="اړيکې-شمیره">'+numberDisplay+copyBtn+'</td>'+
+          '<td data-label="بنډل-نوو">'+escapeHtml(b.field2)+'</td>'+
+          '<td data-label="حالت">'+statusCell+'</td>'+
+          (canProcess ? '<td data-label="تائيد کوونکى-مدير">'+(b.actionedBy?escapeHtml(b.actionedBy):'—')+'</td>' : '')+
+          '<td data-label="يادونه-شوې">'+(b.comment?escapeHtml(b.comment):'—')+'</td>'+
+          '<td data-label="نیټه">'+dateCell+'</td>'+
+          (role==='nto' ? '<td>'+(b.status==='rejected' ? '<button class="btn btn-sm btn-info" data-resubmit="'+b.id+'">بیا ځلې لیږل</button>' : '')+'</td>' : '')+
+        '</tr>';
+      }).join('')+
+    '</tbody></table></div><div id="bundle-pager"></div></div>';
+
+    bindSearchInput('bundle-search', function(){return state.bundleSearch;}, function(v){state.bundleSearch=v; state.bundlePage=0;}, function(){ renderSalesSection(body, role, headerRow); });
+    renderPager(document.getElementById('bundle-pager'), state.bundlePage, rows.length, function(np){
+      state.bundlePage = np;
+      renderSalesSection(body, role, headerRow);
+    });
+
+    if(canProcess){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-open-process]'), function(el){
+        el.onclick = function(){
+          var bid = el.getAttribute('data-open-process');
+          var bb = state.bundles.find(function(x){return x.id===bid;});
+          // A manager must never be able to take over an in-process bundle.
+          if(role==='manager' && bb && bb.status==='in_process'){
+            showToast('دا بنډل اوس د '+(bb.processingBy||'بل مدیر')+' تر پروسس لاندې دی. تر هغه چې حالت بیا د انتظار حالت ته نه وي اوښتی، کلیک نه شي کېدای.');
+            return;
+          }
+          openProcessModal(bid);
+        };
+      });
+    }
+    if(role==='nto'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-resubmit]'), function(btn){
+        btn.onclick = function(){ openResubmitModal(btn.getAttribute('data-resubmit')); };
+      });
+    }
+    if(role==='manager'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function(btn){
+        btn.onclick = function(e){
+          e.stopPropagation();
+          copyToClipboard(btn.getAttribute('data-copy'));
+        };
+      });
+    }
+    if(role==='admin'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-delete-bundle]'), function(btn){
+        btn.onclick = function(e){
+          e.stopPropagation();
+          deleteBundleById(btn.getAttribute('data-delete-bundle'));
+        };
+      });
+    }
+  }
+
+  function copyToClipboard(text){
+    var done = function(){ showToast('شمیره کاپي شوه.'); };
+    var fail = function(){
+      try{
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+      }catch(e){ showToast('کاپي نشو کیدلی.'); }
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(fail);
+    }else{
+      fail();
+    }
+  }
+
+  // Masks everything except the last 3 characters of a number with '***'
+  // (used to hide a customer's number from a manager until it's approved).
+  function maskLast3Digits(str){
+    str = String(str==null?'':str);
+    if(str.length<=3) return '***';
+    return escapeHtml(str.slice(0,-3))+'***';
+  }
+
+  // ---------------- ADMIN: delete a single bundle everywhere ----------------
+  // Asks for confirmation, then removes just this one bundle from the shared
+  // bundles table -- since every role reads the same table, this removes it
+  // for all users (admin/manager/nto) at once.
+  function deleteBundleById(bundleId){
+    var b = state.bundles.find(function(x){return x.id===bundleId;});
+    if(!b) return;
+    var ok = window.confirm('آیا تاسو ډاډه یاست چې غواړئ دا بنډل ړنګ کړئ؟ دا کار به دا بنډل د ټولو یوزرانو لپاره ړنګ کړي او بیرته نشي کیدلی.');
+    if(!ok) return;
+    state.bundles = state.bundles.filter(function(x){return x.id!==bundleId;});
+    persistBundles().then(function(){
+      showToast('بنډل ړنګ شو.');
+      renderDashboard(document.getElementById('app'));
+    });
+  }
+
+  function badgeClass(status){
+    if(status==='pending') return 'badge-pending';
+    if(status==='in_process') return 'badge-process';
+    if(status==='approved') return 'badge-approved';
+    if(status==='rejected') return 'badge-rejected';
+    if(status==='resubmit') return 'badge-resubmit';
+    if(status==='deactivated') return 'badge-deactivated';
+    if(status==='enabled') return 'badge-enabled';
+    if(status==='disabled') return 'badge-disabled';
+    return '';
+  }
+  function statusLabel(status){
+    if(status==='pending') return 'انتظار حالت کې';
+    if(status==='in_process') return 'تر جريان لاندې شو';
+    if(status==='approved') return 'فعاله شوو';
+    if(status==='rejected') return 'رد شوى دى';
+    if(status==='resubmit') return 'بیا استول شوى';
+    if(status==='deactivated') return 'غیري فعاله شو';
+    if(status==='enabled') return 'فعاله';
+    if(status==='disabled') return 'غیر فعاله';
+    return status;
+  }
+  function statusBadge(status){
+    return '<span class="badge '+badgeClass(status)+'">'+statusLabel(status)+'</span>';
+  }
+
+  // ---------------- MANAGER ASSIGNMENT WINDOW (problem #4) ----------------
+  // The manager who created a customer's account is that customer's "own"
+  // manager. When the customer sends a fresh bundle (or resubmits one), it
+  // is reserved for that manager for ASSIGN_WAIT_MS. If the assigned
+  // manager hasn't acted on it by then, it opens up to every manager.
+  function findAssignedManager(ntoUsername){
+    var ntoUser = state.users.find(function(u){ return u.username===ntoUsername && u.role==='nto'; });
+    if(!ntoUser || !ntoUser.createdBy) return null;
+    var creator = state.users.find(function(u){ return u.username===ntoUser.createdBy && u.role==='manager'; });
+    return creator ? creator.username : null;
+  }
+  function isBundleClaimableByManager(b, managerUsername){
+    // Approved/rejected/deactivated bundles are already decided -- no more
+    // contention over who may act on them, so always visible/claimable.
+    if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return true;
+    var assignedMgr = findAssignedManager(b.ntoUsername);
+    if(!assignedMgr) return true; // customer has no owning manager (e.g. created by admin) -- open to all immediately
+    var startedAt = b.waitStartAt || b.createdAt || 0;
+    if(Date.now() - startedAt >= ASSIGN_WAIT_MS) return true; // window elapsed -- open to all managers
+    return managerUsername === assignedMgr;
+  }
+  // Schedules a single re-render once the soonest pending assignment window
+  // in state.bundles elapses, so the UI/notifications update on their own
+  // instead of requiring a manual refresh.
+  function scheduleAssignWindowRefresh(){
+    if(state.assignTimer){ clearTimeout(state.assignTimer); state.assignTimer=null; }
+    if(!state.currentUser || state.currentUser.role!=='manager') return;
+    var now = Date.now();
+    var soonest = null;
+    state.bundles.forEach(function(b){
+      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return;
+      if(isBundleClaimableByManager(b, state.currentUser.username)) return;
+      var startedAt = b.waitStartAt || b.createdAt || 0;
+      var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
+      if(remaining>0 && (soonest===null || remaining<soonest)) soonest = remaining;
+    });
+    if(soonest!==null){
+      state.assignTimer = setTimeout(function(){
+        state.assignTimer = null;
+        checkForManagerEscalations();
+        render();
+      }, soonest+250);
+    }
+  }
+
+  // ---------------- PROCESS MODAL (admin/manager: approve/reject) ----------------
+  function openProcessModal(bundleId){
+    var b = state.bundles.find(function(x){return x.id===bundleId;});
+    if(!b) return;
+    if(b.status!=='pending' && b.status!=='resubmit' && b.status!=='in_process') return;
+    if(state.currentUser.role==='manager' && b.status==='in_process'){
+      showToast('دا بنډل اوس د '+(b.processingBy||'بل مدیر')+' تر پروسس لاندې دی. لومړی باید حالت بیا د انتظار حالت ته راوګرځي.');
+      return;
+    }
+    if(state.currentUser.role==='manager' && (b.status==='pending'||b.status==='resubmit') && !isBundleClaimableByManager(b, state.currentUser.username)){
+      var ownMgr = findAssignedManager(b.ntoUsername);
+      showToast('دا بنډل لومړی د '+ownMgr+' لپاره خوندي دی، مهرباني وکړئ لږ صبر وکړئ.');
+      return;
+    }
+    // If it's already in_process (another manager started it but never
+    // finished/cancelled -- e.g. closed the tab), take it over. Use the
+    // originally-stored previous status so "لغوه کول" still reverts it
+    // correctly instead of getting stuck on 'in_process' forever.
+    var previousStatus = (b.status==='in_process') ? (b.prevStatusBeforeProcess || 'pending') : b.status;
+    b.prevStatusBeforeProcess = previousStatus;
+    b.status = 'in_process';
+    b.processingBy = state.currentUser.username;
+    persistBundles().then(function(){
+      if(b.type==='deactivate'){
+        state.modal = {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus};
+      }else{
+        state.modal = {type:'process', bundleId:bundleId, previousStatus:previousStatus};
+      }
+      render();
+    });
+  }
+
+  function closeProcessModal(){
+    if(!state.modal) return;
+    var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+    if(b && b.status==='in_process'){
+      b.status = state.modal.previousStatus;
+      b.processingBy = null;
+      b.prevStatusBeforeProcess = null;
+      persistBundles().then(function(){
+        state.modal = null;
+        render();
+      });
+    }else{
+      state.modal = null;
+      render();
+    }
+  }
+
+  // Confirms, then rejects the bundle immediately with the given quick-phrase
+  // as its note -- no separate "Reject" click needed afterwards.
+  function confirmQuickReject(phrase){
+    var ok = window.confirm('آیا ډاډه یاست چې غواړئ دا بنډل د "'+phrase+'" یادونې سره رد کړئ؟');
+    if(!ok) return;
+    submitProcessDecision('rejected', phrase);
+  }
+
+  function submitProcessDecision(decision, overrideComment){
+    if(!state.modal) return;
+    var commentEl = document.getElementById('proc-comment');
+    var comment = (overrideComment!=null) ? overrideComment : (commentEl ? commentEl.value.trim() : '');
+    if(!comment){ showToast('مهرباني وکړئ لومړی کمینټ ولیکئ.'); return; }
+
+    var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+    if(!b) return;
+
+    // IMPORTANT: determine the manager BEFORE clearing processingBy/action fields.
+    // If a manager opened the bundle, processingBy is the safest source of the
+    // manager identity. Admin approvals are assigned to the customer's manager.
+    var approvedManager = null;
+    if(decision==='approved'){
+      if(b.processingBy){
+        var processingMgr = state.users.find(function(u){
+          return u.username===b.processingBy && u.role==='manager';
+        });
+        if(processingMgr) approvedManager = processingMgr.username;
+      }
+      if(!approvedManager && b.actionedBy){
+        var actionMgr = state.users.find(function(u){
+          return u.username===b.actionedBy && u.role==='manager';
+        });
+        if(actionMgr) approvedManager = actionMgr.username;
+      }
+      if(!approvedManager) approvedManager = findAssignedManager(b.ntoUsername);
+      if(!approvedManager && state.currentUser.role==='manager') approvedManager = state.currentUser.username;
+      if(!approvedManager){
+        showToast('د دې مشتری لپاره مدیر پیدا نه شو؛ فروشات ثبت نه شول.');
+        return;
+      }
+    }
+
+    b.status = decision;
+    b.comment = comment;
+    b.actionedBy = state.currentUser.username;
+    b.actionedAt = Date.now();
+    b.processingBy = null;
+    b.prevStatusBeforeProcess = null;
+    b.ntoSeen = false;
+
+    if(decision!=='approved'){
+      persistBundles().then(function(){
+        showToast('بنډل رد شو.');
+        state.modal = null;
+        render();
+      }).catch(function(){ showToast('د بنډل د ثبت پر مهال تېروتنه وشوه.'); });
+      return;
+    }
+
+    var amount = extractNumber(comment);
+    var ntoUser = b.ntoUsername;
+    var totalsRef = db.collection('appdata').doc('salesTotals');
+    var bundlesRef = db.collection('appdata').doc('bundles');
+    var bundleList = state.bundles.slice();
+
+    // Save the approval and both sales reports in one Firestore transaction.
+    // Do NOT use dotted field paths such as managerSales.<username> because a
+    // username can contain characters that Firestore interprets as path syntax.
+    // Reading the whole maps and writing them back also guarantees that the
+    // number entered in the comment is actually persisted for both accounts.
+    db.runTransaction(function(tx){
+      return Promise.all([tx.get(totalsRef), tx.get(bundlesRef)]).then(function(reads){
+        var totalsSnap = reads[0];
+        var bundlesSnap = reads[1];
+        var totals = totalsSnap.exists ? (totalsSnap.data()||{}) : {};
+        var managerSales = totals.managerSales || {};
+        var ntoSales = totals.ntoSales || {};
+
+        if(!managerSales[approvedManager]) managerSales[approvedManager] = {total:0,count:0};
+        managerSales[approvedManager] = {
+          total:(Number(managerSales[approvedManager].total)||0) + amount,
+          count:(Number(managerSales[approvedManager].count)||0) + 1
+        };
+
+        if(ntoUser){
+          if(!ntoSales[ntoUser]) ntoSales[ntoUser] = {total:0,count:0};
+          ntoSales[ntoUser] = {
+            total:(Number(ntoSales[ntoUser].total)||0) + amount,
+            count:(Number(ntoSales[ntoUser].count)||0) + 1
+          };
+        }
+
+        tx.set(totalsRef, {
+          managerSales: managerSales,
+          ntoSales: ntoSales,
+          lastApprovalAt: Date.now()
+        }, {merge:true});
+        tx.set(bundlesRef, {list: bundleList}, {merge:true});
+      });
+    }).then(function(){
+      // Refresh the counters from Firestore so the فروشات page always displays
+      // the server value immediately after activation.
+      return totalsRef.get();
+    }).then(function(snap){
+      var d = snap.exists ? (snap.data()||{}) : {};
+      state.managerSales = d.managerSales || {};
+      state.ntoSales = d.ntoSales || {};
+      showToast('بنډل فعاله شو او فروشات د مشتری او مدیر دواړو حسابونو ته جمع شول.');
+      state.modal = null;
+      render();
+    }).catch(function(err){
+      console.error(err);
+      showToast('د فعالولو یا فروشاتو د ثبت پر مهال تېروتنه وشوه. بیا هڅه وکړئ.');
+    });
+  }
+
+  // ---------------- DEACTIVATE-CONFIRM MODAL (admin/manager: deactivate bundles request) ----------------
+  function submitDeactivate(){
+    if(!state.modal) return;
+    var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+    if(!b) return;
+    b.status = 'deactivated';
+    b.actionedBy = state.currentUser.username;
+    b.actionedAt = Date.now();
+    b.processingBy = null;
+    b.prevStatusBeforeProcess = null;
+    b.ntoSeen = false;
+    persistBundles().then(function(){
+      showToast('بنډلونه غیري فعاله شول.');
+      state.modal = null;
+      render();
+    });
+  }
+
+  // ---------------- RESUBMIT MODAL (NTO) ----------------
+  function openResubmitModal(bundleId){
+    var b = state.bundles.find(function(x){return x.id===bundleId;});
+    if(!b || b.status!=='rejected') return;
+    state.modal = {type:'resubmit', bundleId:bundleId};
+    render();
+  }
+
+  function submitResubmit(){
+    if(!state.modal) return;
+    var commentEl = document.getElementById('resub-comment');
+    var comment = commentEl ? commentEl.value.trim() : '';
+    if(!comment){ showToast('مهرباني وکړئ کمینټ ولیکئ.'); return; }
+    var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+    if(!b) return;
+    b.status = 'resubmit';
+    b.comment = comment;
+    b.actionedBy = null;
+    b.actionedAt = null;
+    b.processingBy = null;
+    b.ntoSeen = true;
+    b.waitStartAt = Date.now();
+    persistBundles().then(function(){
+      showToast('بنډل بیا وړاندې شو.');
+      state.modal = null;
+      render();
+    });
+  }
+
+  // ---------------- account modals (logout / desktop-view / change password) ----------------
+  function submitChangePassword(){
+    var cur = document.getElementById('pw-current').value;
+    var nw = document.getElementById('pw-new').value;
+    var cf = document.getElementById('pw-confirm').value;
+    var u = state.users.find(function(x){ return x.username===state.currentUser.username; });
+    if(!u || u.password!==cur){
+      state.pwError = 'اوسنی پاسورډ سم نه دی.';
+      render(); return;
+    }
+    if(!nw || nw.length<4){
+      state.pwError = 'نوی پاسورډ دي لږ تر لږه ۴ توري وي.';
+      render(); return;
+    }
+    if(nw!==cf){
+      state.pwError = 'نوی پاسورډ سره سمون نه خوري.';
+      render(); return;
+    }
+    u.password = nw;
+    persistUsers().then(function(){
+      state.pwError = '';
+      state.modal = null;
+      showToast('پاسورډ بدل شو.');
+      render();
+    });
+  }
+
+  function renderModalLayer(){
+    var old = document.getElementById('modal-layer');
+    if(old) old.remove();
+    if(!state.modal) return;
+
+    var layer = document.createElement('div');
+    layer.id = 'modal-layer';
+    layer.className = 'modal-backdrop';
+
+    if(state.modal.type==='confirm-logout'){
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>وتل (Logout)</h3>'+
+          '<p class="note-text" style="margin-top:0;">آیا تاسو ډاډه یاست چې غواړئ له سیسټم څخه ووځئ؟</p>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-danger" id="cl-confirm">هو، ووځه</button>'+
+            '<button class="btn btn-ghost" id="cl-cancel">لغوه کول</button>'+
+          '</div>'+
+        '</div>';
+    }else if(state.modal.type==='confirm-desktop'){
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>د لید بدلول</h3>'+
+          '<p class="note-text" style="margin-top:0;">آیا غواړئ '+(state.forceDesktop?'موبایل':'ډیسک-ټاپ')+' ليد ته لاړ شئ؟</p>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-gold" id="cd-confirm">هو</button>'+
+            '<button class="btn btn-ghost" id="cd-cancel">لغوه کول</button>'+
+          '</div>'+
+        '</div>';
+    }else if(state.modal.type==='change-password'){
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>پاسورډ بدلول</h3>'+
+          (state.pwError ? '<div class="error-box">'+escapeHtml(state.pwError)+'</div>' : '')+
+          '<div class="field"><label>اوسنی پاسورډ</label><input id="pw-current" type="password"></div>'+
+          '<div class="field"><label>نوی پاسورډ</label><input id="pw-new" type="password"></div>'+
+          '<div class="field"><label>نوی پاسورډ بیا ولیکئ</label><input id="pw-confirm" type="password"></div>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-gold btn-block" id="pw-submit">بدلول</button>'+
+          '</div>'+
+          '<button class="btn btn-ghost btn-block" id="pw-cancel" style="margin-top:10px;">لغوه کول</button>'+
+        '</div>';
+    }else if(state.modal.type==='process'){
+      var procB = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>د بنډل پروسس کول</h3>'+
+          '<div class="proc-number-box">'+
+            '<div class="proc-number-row">'+
+              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
+              '<button class="icon-btn-copy" id="proc-copy-number" title="کاپي کول">&#128203;</button>'+
+            '</div>'+
+            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
+          '</div>'+
+          '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px 0;">'+
+            '<button class="btn btn-sm btn-ghost" id="proc-quick-1">پیسې اضافه کړه</button>'+
+            '<button class="btn btn-sm btn-ghost" id="proc-quick-2">پیسې کمې دي</button>'+
+            '<button class="btn btn-sm btn-ghost" id="proc-quick-3">شمیره غلطه ده</button>'+
+          '</div>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-ok" id="proc-approve">فعاله کول (Approve)</button>'+
+            '<button class="btn btn-danger" id="proc-reject">رد کول (Reject)</button>'+
+          '</div>'+
+          '<button class="btn btn-ghost btn-block" id="proc-cancel" style="margin-top:10px;">لغوه کول</button>'+
+        '</div>';
+    }else if(state.modal.type==='deactivate-confirm'){
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>د بنډلونو غیري فعالول</h3>'+
+          '<div class="proc-number-box">'+
+            '<div class="proc-number-row">'+
+              '<span class="proc-number" dir="ltr">'+escapeHtml(procB?procB.field1:'')+'</span>'+
+              '<button class="icon-btn-copy" id="deact-copy-number" title="کاپي کول">&#128203;</button>'+
+            '</div>'+
+            '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
+          '</div>'+
+          '<p class="note-text" style="margin-top:0;">آیا تاسو غواړئ چې د دې مشتري ټول بنډلونه غیري فعاله کړئ؟</p>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-danger btn-block" id="deact-confirm">غیري فعاله شو.</button>'+
+          '</div>'+
+          '<button class="btn btn-ghost btn-block" id="deact-cancel" style="margin-top:10px;">لغوه کول</button>'+
+        '</div>';
+    }else if(state.modal.type==='resubmit'){
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>بیا ځلې استول</h3>'+
+          '<div class="field"><label>کمینټ</label><textarea id="resub-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
+          '<div class="modal-actions">'+
+            '<button class="btn btn-gold btn-block" id="resub-submit">استول</button>'+
+          '</div>'+
+          '<button class="btn btn-ghost btn-block" id="resub-cancel" style="margin-top:10px;">لغوه کول</button>'+
+        '</div>';
+    }
+
+    document.body.appendChild(layer);
+
+    if(state.modal.type==='deactivate-confirm'){
+      var deactCopyBtn = document.getElementById('deact-copy-number');
+      var deactBundle = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
+      if(deactCopyBtn && deactBundle){
+        deactCopyBtn.onclick = function(){
+          var num = deactBundle.field1 || '';
+          if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(num).then(function(){ showToast('شمیره کاپي شوه.'); }).catch(function(){ showToast('کاپي کول ممکن نه شول.'); });
+          }else{
+            var ta=document.createElement('textarea'); ta.value=num; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');showToast('شمیره کاپي شوه.');}catch(e){showToast('کاپي کول ممکن نه شول.');} ta.remove();
+          }
+        };
+      }
+    }
+
+    if(state.modal.type==='confirm-logout'){
+      document.getElementById('cl-confirm').onclick = doLogout;
+      document.getElementById('cl-cancel').onclick = function(){ state.modal=null; render(); };
+    }else if(state.modal.type==='confirm-desktop'){
+      document.getElementById('cd-confirm').onclick = function(){
+        state.forceDesktop = !state.forceDesktop;
+        document.body.classList.toggle('force-desktop', state.forceDesktop);
+        state.modal = null;
+        render();
+      };
+      document.getElementById('cd-cancel').onclick = function(){ state.modal=null; render(); };
+    }else if(state.modal.type==='change-password'){
+      document.getElementById('pw-submit').onclick = submitChangePassword;
+      document.getElementById('pw-cancel').onclick = function(){ state.modal=null; state.pwError=''; render(); };
+    }else if(state.modal.type==='process'){
+      document.getElementById('proc-approve').onclick = function(){ submitProcessDecision('approved'); };
+      document.getElementById('proc-reject').onclick = function(){ submitProcessDecision('rejected'); };
+      document.getElementById('proc-cancel').onclick = closeProcessModal;
+      document.getElementById('proc-quick-1').onclick = function(){ confirmQuickReject('پیسې اضافه کړه'); };
+      document.getElementById('proc-quick-2').onclick = function(){ confirmQuickReject('پیسې کمې دي'); };
+      document.getElementById('proc-quick-3').onclick = function(){ confirmQuickReject('شمیره غلطه ده'); };
+      (function(){
+        var copyBtn = document.getElementById('proc-copy-number');
+        if(copyBtn){ copyBtn.onclick = function(){ var pb = state.bundles.find(function(x){return x.id===state.modal.bundleId;}); if(pb) copyToClipboard(pb.field1); }; }
+      })();
+    }else if(state.modal.type==='deactivate-confirm'){
+      document.getElementById('deact-confirm').onclick = submitDeactivate;
+      document.getElementById('deact-cancel').onclick = closeProcessModal;
+    }else if(state.modal.type==='resubmit'){
+      document.getElementById('resub-submit').onclick = submitResubmit;
+      document.getElementById('resub-cancel').onclick = function(){ state.modal=null; render(); };
+    }
+  }
+
+  // ---------------- USERS SECTIONS (managers / ntos) ----------------
+  function renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole){
+    // Managers only see the customer accounts THEY created; other managers'
+    // customers stay hidden from them. Admin still sees everyone.
+    var fullList = state.users.filter(function(u){
+      if(u.role!==targetRole) return false;
+      if(targetRole==='nto' && viewerRole==='manager' && u.createdBy!==state.currentUser.username) return false;
+      return true;
+    });
+    var roleLabel = targetRole==='manager' ? 'مدير' : 'مشتري';
+    var isNto = targetRole==='nto';
+    var searchFields = isNto ? ['username','address','contact','createdBy'] : ['username'];
+    var list = filterBySearch(fullList, state.userSearch[targetRole], searchFields);
+
+    body.innerHTML =
+      '<div class="card">'+
+        '<h4>نوی '+roleLabel+' حساب جوړ کړئ</h4>'+
+        '<div class="row">'+
+          '<div class="field"><label>یوزرنوم</label><input id="nu-user" type="text"></div>'+
+          '<div class="field"><label>پاسورډ</label><input id="nu-pass" type="text"></div>'+
+          (isNto ? '<div class="field"><label>ادرس</label><input id="nu-addr" type="text"></div>'+
+                   '<div class="field"><label>اړیکې شمیره</label><input id="nu-contact" type="text"></div>' : '')+
+          '<button class="btn btn-gold" id="nu-create">جوړ کړئ</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="card"><h4>د '+roleLabel+' حسابونه</h4>'+
+        (fullList.length ? '<div class="search-row"><input id="nu-search" type="text" placeholder="د '+roleLabel+' لټون (یوزرنوم'+(isNto?'، ادرس یا شمیره':'')+')..." value="'+escapeHtml(state.userSearch[targetRole])+'"><span class="search-icon">&#128269;</span></div>' : '')+
+        '<div id="nu-list"></div><div id="nu-pager"></div></div>';
+
+    document.getElementById('nu-create').onclick = function(){
+      var u = document.getElementById('nu-user').value.trim();
+      var p = document.getElementById('nu-pass').value.trim();
+      var addr = isNto ? document.getElementById('nu-addr').value.trim() : '';
+      var contact = isNto ? document.getElementById('nu-contact').value.trim() : '';
+      if(!u || !p){ showToast('یوزرنوم او پاسورډ دواړه ولیکئ.'); return; }
+      if(isNto && (!addr || !contact)){ showToast('ادرس او اړیکې شمیره هم ولیکئ.'); return; }
+      if(state.users.find(function(x){return x.username===u;})){ showToast('دا یوزرنوم مخکې شتون لري.'); return; }
+      var newUser = {username:u, password:p, role:targetRole, status:'enabled', createdBy:state.currentUser.username};
+      if(isNto){ newUser.address = addr; newUser.contact = contact; }
+      state.users.push(newUser);
+      persistUsers().then(function(){
+        showToast(roleLabel+' حساب جوړ شو.');
+        renderSection(document.getElementById('main-area'));
+      });
+    };
+
+    if(fullList.length){
+      bindSearchInput('nu-search', function(){return state.userSearch[targetRole];}, function(v){state.userSearch[targetRole]=v; state.userPage[targetRole]=0;}, function(){ renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole); });
+    }
+
+    var listEl = document.getElementById('nu-list');
+    if(!fullList.length){
+      listEl.innerHTML = '<div class="empty-state">تر اوسه هیڅ حساب نشته.</div>';
+      return;
+    }
+    if(!list.length){
+      listEl.innerHTML = '<div class="empty-state">ستاسو د لټون سره سم هیڅ حساب ونه موندل شو.</div>';
+      return;
+    }
+
+    var page = state.userPage[targetRole] || 0;
+    var pageCount = Math.max(1, Math.ceil(list.length/PAGE_SIZE));
+    if(page>pageCount-1) page = pageCount-1;
+    if(page<0) page = 0;
+    state.userPage[targetRole] = page;
+    var pageList = list.slice(page*PAGE_SIZE, (page+1)*PAGE_SIZE);
+
+    listEl.innerHTML = '<div style="overflow-x:auto;"><table><thead><tr><th>یوزر-نوم</th>'+
+      (isNto ? '<th>مشتري-ادرس</th><th>اړیکې-شمیره</th><th>جوړونکی</th>' : '')+
+      '<th>حالت</th>'+(canToggle?'<th></th>':'')+(canDelete?'<th></th>':'')+'</tr></thead><tbody>'+
+      pageList.map(function(u){
+        return '<tr><td data-label="یوزر-نوم">'+escapeHtml(u.username)+'</td>'+
+          (isNto ? '<td data-label="مشتري-ادرس">'+escapeHtml(u.address||'—')+'</td><td data-label="اړیکې-شمیره">'+escapeHtml(u.contact||'—')+'</td><td data-label="جوړونکی">'+escapeHtml(u.createdBy||'—')+'</td>' : '')+
+          '<td data-label="حالت">'+statusBadge(u.status==='enabled'?'enabled':'disabled')+'</td>'+
+          (canToggle ? '<td><button class="btn btn-sm '+(u.status==='enabled'?'btn-danger':'btn-ok')+'" data-toggle="'+u.username+'">'+(u.status==='enabled'?'غیر فعالول':'فعالول')+'</button></td>' : '')+
+          (canDelete ? '<td><button class="icon-btn-sm" data-delete-user="'+u.username+'" title="ډیلیټ">&#128465;</button></td>' : '')+
+        '</tr>';
+      }).join('')+
+    '</tbody></table></div>';
+
+    renderPager(document.getElementById('nu-pager'), page, list.length, function(np){
+      state.userPage[targetRole] = np;
+      renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole);
+    });
+
+    if(canToggle){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-toggle]'), function(btn){
+        btn.onclick = function(){
+          var uname = btn.getAttribute('data-toggle');
+          var u = state.users.find(function(x){return x.username===uname;});
+          if(u){
+            u.status = u.status==='enabled' ? 'disabled' : 'enabled';
+            persistUsers().then(function(){
+              showToast('د '+uname+' حالت بدل شو.');
+              renderSection(document.getElementById('main-area'));
+            });
+          }
+        };
+      });
+    }
+    if(canDelete){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-delete-user]'), function(btn){
+        btn.onclick = function(){
+          var uname = btn.getAttribute('data-delete-user');
+          var ok = window.confirm('آیا ډاډه یاست چې غواړئ '+uname+'حساب ډیلیټ کړئ.');
+          if(!ok) return;
+          state.users = state.users.filter(function(x){return x.username!==uname;});
+          persistUsers().then(function(){
+            showToast(uname+' حساب ډیلیټ شو.');
+            renderSection(document.getElementById('main-area'));
+          });
+        };
+      });
+    }
+  }
+
+  // ---------------- REPORT SECTION ----------------
+  function extractNumber(str){
+    if(!str) return 0;
+    var normalized = normalizeDigits(str);
+    // Strip thousands-separator commas (e.g. "1,500") so amounts typed with
+    // commas are still picked up as a single number instead of just "1".
+    var cleaned = normalized.replace(/(\d),(?=\d{3}(\D|$))/g, '$1');
+    var m = cleaned.match(/\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : 0;
+  }
+  function dateKeyOf(ts){
+    var d = new Date(ts);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function managerStats(managerUsername){
+    var s = state.managerSales[managerUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+  }
+
+  function ntoStats(ntoUsername){
+    var s = state.ntoSales[ntoUsername];
+    return s ? {total:s.total, count:s.count} : {total:0, count:0};
+  }
+
+  // ---------------- ADMIN: PER-NTO REPORT ----------------
+  function renderNtoReportSection(body, headerRow, role){
+    role = role || 'admin';
+    var ntoUsers = state.users.filter(function(u){
+      if(u.role!=='nto') return false;
+      if(role==='manager') return true;
+      return true;
+    });
+
+    if(headerRow){
+      headerRow.innerHTML =
+        '<div><h2>'+sectionTitle('nto_report')+'</h2></div>'+
+        '<div class="header-actions">'+
+          '<button class="icon-btn" id="nto-report-export" title="اکسیل ډاونلوډ">&#128190;</button>'+
+        '</div>';
+      document.getElementById('nto-report-export').onclick = function(){
+        if(!ntoUsers.length){ showToast('هیڅ معلومات نشته چې ډاونلوډ شي.'); return; }
+        var data = ntoUsers.map(function(u){
+          var s = ntoStats(u.username);
+          var o = {};
+          o['مشتري'] = u.username;
+          o['فعاله شويو بنډلونو شمير'] = s.count;
+          o['فروشات'] = s.total;
+          return o;
+        });
+        try{
+          var ws = XLSX.utils.json_to_sheet(data);
+          var wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'NtoReport');
+          XLSX.writeFile(wb, 'nto-report-'+Date.now()+'.xlsx');
+        }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
+      };
+    }
+
+    if(!ntoUsers.length){
+      body.innerHTML = '<div class="card"><div class="empty-state">تر اوسه هیڅ مشتري حساب نشته.</div></div>';
+      return;
+    }
+    var rows = ntoUsers.map(function(u){
+      var s = ntoStats(u.username);
+      return {username:u.username, count:s.count, total:s.total};
+    });
+    body.innerHTML = '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
+      '<th>مشتري</th><th>فعاله شويو بنډلونو شمير</th><th>فروشات</th>'+(role==='admin'?'<th></th>':'')+
+      '</tr></thead><tbody>'+
+      rows.map(function(r){
+        return '<tr><td data-label="مشتري">'+escapeHtml(r.username)+'</td><td data-label="فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
+          (role==='admin' ? '<td><button class="icon-btn-sm" data-nto-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td>' : '')+'</tr>';
+      }).join('')+
+    '</tbody></table></div></div>';
+
+    if(role!=='admin') return;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-nto-reset]'), function(btn){
+      btn.onclick = function(){
+        var nu = btn.getAttribute('data-nto-reset');
+        var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+nu+' د راپور معلومات پاک کړئ؟');
+        if(!ok) return;
+        state.ntoSales[nu] = {total:0, count:0};
+        var resetObj = {}; resetObj['ntoSales.'+nu] = {total:0, count:0};
+        db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+          showToast('د '+nu+' راپور پاک شو.');
+          renderSection(document.getElementById('main-area'));
+        });
+      };
+    });
+  }
+
+  function renderReportSection(body, role, headerRow){
+    if(role==='admin'){
+      var managers = state.users.filter(function(u){return u.role==='manager';});
+
+      if(headerRow){
+        headerRow.innerHTML =
+          '<div><h2>'+sectionTitle('report')+'</h2></div>'+
+          '<div class="header-actions">'+
+            '<button class="icon-btn" id="mgr-report-export" title="اکسیل ډاونلوډ">&#128190;</button>'+
+          '</div>';
+        document.getElementById('mgr-report-export').onclick = function(){
+          if(!managers.length){ showToast('هیڅ معلومات نشته چې ډاونلوډ شي.'); return; }
+          var data = managers.map(function(m){
+            var s = managerStats(m.username);
+            var o = {};
+            o['مدير'] = m.username;
+            o['د فعاله شويو بنډلونو شمير'] = s.count;
+            o['فروشات'] = s.total;
+            return o;
+          });
+          try{
+            var ws = XLSX.utils.json_to_sheet(data);
+            var wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'ManagerReport');
+            XLSX.writeFile(wb, 'manager-report-'+Date.now()+'.xlsx');
+          }catch(e){ showToast('د ډاونلوډ کولو کې تېروتنه.'); }
+        };
+      }
+
+      if(!managers.length){
+        body.innerHTML = '<div class="card"><div class="empty-state">تر اوسه د هيڅ مدير حساب نشته.</div></div>';
+      }else{
+        var rows = managers.map(function(m){
+          var s = managerStats(m.username);
+          return {username:m.username, count:s.count, total:s.total};
+        });
+        body.innerHTML = '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
+          '<th>مدير</th><th>د فعاله شويو بنډلونو شمير</th><th>فروشات</th><th></th>'+
+          '</tr></thead><tbody>'+
+          rows.map(function(r){
+            return '<tr><td data-label="مدير">'+escapeHtml(r.username)+'</td><td data-label="د فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
+              '<td><button class="icon-btn-sm" data-mgr-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td></tr>';
+          }).join('')+
+        '</tbody></table></div></div>';
+
+        Array.prototype.forEach.call(document.querySelectorAll('[data-mgr-reset]'), function(btn){
+          btn.onclick = function(){
+            var mgr = btn.getAttribute('data-mgr-reset');
+            var ok = window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د راپور معلومات پاک کړئ؟');
+            if(!ok) return;
+            state.managerSales[mgr] = {total:0, count:0};
+            var resetObj = {}; resetObj['managerSales.'+mgr] = {total:0, count:0};
+            db.collection('appdata').doc('salesTotals').set(resetObj, {merge:true}).then(function(){
+              showToast('د '+mgr+' راپور پاک شو.');
+              renderSection(document.getElementById('main-area'));
+            });
+          };
+        });
+      }
+    }else if(role==='manager'){
+      var s = managerStats(state.currentUser.username);
+      body.innerHTML =
+        '<div class="card">'+
+          '<h4>ستاسو د فروشاتو راپور</h4>'+
+          '<div style="font-size:28px;font-weight:800;color:var(--ok);">'+s.total.toLocaleString()+' افغانۍ</div>'+
+          '<div class="small-muted" style="margin-top:6px;">فعاله شوې بنډلونو شمير: '+s.count+'</div>'+
+        '</div>';
+    }else if(role==='nto'){
+      var ns = ntoStats(state.currentUser.username);
+      body.innerHTML =
+        '<div class="card">'+
+          '<h4>ستاسو د فروشاتو راپور</h4>'+
+          '<div style="font-size:28px;font-weight:800;color:var(--ok);">'+ns.total.toLocaleString()+' افغانۍ</div>'+
+          '<div class="small-muted" style="margin-top:6px;">فعاله شوې بنډلونو شمير: '+ns.count+'</div>'+
+        '</div>';
+    }
+  }
+
+  // ---------------- COMPANY ROLLS (admin only) ----------------
+  function renderRollsSection(body){
+    body.innerHTML =
+      '<div class="card">'+
+        '<h4>نوی پيغام اضافه کړئ</h4>'+
+        '<div class="row"><div class="field"><textarea id="rl-text" rows="3" placeholder="د پيغام متن ولیکئ..."></textarea></div>'+
+        '<button class="btn btn-gold" id="rl-add">اضافه کړئ</button></div>'+
+      '</div>'+
+      '<div class="card"><h4>موجوده پيغامونه</h4><div id="rl-list"></div></div>';
+
+    document.getElementById('rl-add').onclick = function(){
+      var t = document.getElementById('rl-text').value.trim();
+      if(!t) return;
+      state.rolls.unshift({id:uid(), text:t, createdAt:Date.now(), createdBy:state.currentUser.username});
+      persistRolls().then(function(){ renderSection(document.getElementById('main-area')); });
+    };
+
+    var list = document.getElementById('rl-list');
+    if(!state.rolls.length){
+      list.innerHTML = '<div class="empty-state">تر اوسه هیڅ پيغام نشته.</div>';
+    }else{
+      list.innerHTML = state.rolls.map(function(r){
+        return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
+          '<div style="font-size:14px;">'+escapeHtml(r.text)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(r.createdAt)+'</div>'+
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // ---------------- COMPLAINTS ----------------
+  function renderComplaintsSection(body, role){
+    var canSubmit = role==='nto';
+    var rows = role==='nto' ? state.complaints.filter(function(c){return c.fromUsername===state.currentUser.username;}) : state.complaints.slice();
+
+    body.innerHTML =
+      (canSubmit ? '<div class="card"><h4>نوی شکایت ولیکئ</h4><div class="row">'+
+        '<div class="field"><textarea id="cp-text" rows="3" placeholder="خپل شکایت دلته ولیکئ..."></textarea></div>'+
+        '<button class="btn btn-gold" id="cp-add">واستوئ</button></div></div>' : '')+
+      '<div class="card"><h4>شکایتونه</h4><div id="cp-list"></div></div>';
+
+    if(canSubmit){
+      document.getElementById('cp-add').onclick = function(){
+        var t = document.getElementById('cp-text').value.trim();
+        if(!t) return;
+        state.complaints.unshift({id:uid(), fromUsername:state.currentUser.username, text:t, createdAt:Date.now()});
+        persistComplaints().then(function(){ renderSection(document.getElementById('main-area')); });
+      };
+    }
+
+    var list = document.getElementById('cp-list');
+    if(!rows.length){
+      list.innerHTML = '<div class="empty-state">هیڅ شکایت نشته.</div>';
+    }else{
+      list.innerHTML = rows.map(function(c){
+        return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
+          (role!=='nto' ? '<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">له: '+escapeHtml(c.fromUsername)+'</div>' : '')+
+          '<div style="font-size:14px;">'+escapeHtml(c.text)+'</div>'+
+          '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">'+fmtDateHtml(c.createdAt)+'</div>'+
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // ---------------- utils ----------------
+  function fmtDate(ts){
+    var d = new Date(ts);
+    return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true});
+  }
+  // Same as fmtDate but forces left-to-right rendering so the date/time
+  // order doesn't get flipped by the page's RTL text direction.
+  function fmtDateHtml(ts){
+    return '<span dir="ltr" style="unicode-bidi:isolate">'+fmtDate(ts)+'</span>';
+  }
+  function escapeHtml(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  var toastTimer=null;
+  function showToast(msg){
+    var el = document.querySelector('.toast');
+    if(el) el.remove();
+    el = document.createElement('div');
+    el.className='toast';
+    el.textContent=msg;
+    document.body.appendChild(el);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.remove(); }, 2600);
+  }
+
+  // ---------------- notifications (Web Notification API) ----------------
+  function requestNotificationPermission(){
+    if(!('Notification' in window)) return;
+    if(Notification.permission==='default'){
+      Notification.requestPermission();
+    }
+  }
+
+  function fireNotification(title, body){
+    if(!('Notification' in window)) return;
+    if(Notification.permission!=='granted') return;
+    try{
+      if(navigator.serviceWorker && navigator.serviceWorker.ready){
+        navigator.serviceWorker.ready.then(function(reg){
+          if(reg && reg.showNotification){
+            reg.showNotification(title, {body:body, icon:'icon-192.png', badge:'icon-192.png', vibrate:[200,100,200]});
+          }else{
+            new Notification(title, {body:body, icon:'icon-192.png'});
+          }
+        }).catch(function(){
+          new Notification(title, {body:body, icon:'icon-192.png'});
+        });
+      }else{
+        new Notification(title, {body:body, icon:'icon-192.png'});
+      }
+    }catch(e){}
+  }
+
+  // ---------------- real-time sync ----------------
+  function attachListeners(){
+    if(state.unsubs) return;
+    state.unsubs = [];
+    state.unsubs.push(db.collection('appdata').doc('users').onSnapshot(function(snap){
+      if(snap.exists && snap.data().list){ state.users = snap.data().list; state.loadError = false; render(); }
+    }));
+    state.unsubs.push(db.collection('appdata').doc('bundles').onSnapshot(function(snap){
+      if(snap.exists && snap.data().list){
+        var newList = snap.data().list;
+        checkForNewNtoActivity(newList);
+        checkForStatusChangesForNto(newList);
+        state.bundles = newList;
+        render();
+      }
+    }));
+    state.unsubs.push(db.collection('appdata').doc('complaints').onSnapshot(function(snap){
+      if(snap.exists && snap.data().list){ state.complaints = snap.data().list; render(); }
+    }));
+    state.unsubs.push(db.collection('appdata').doc('rolls').onSnapshot(function(snap){
+      if(snap.exists && snap.data().list){ state.rolls = snap.data().list; render(); }
+    }));
+    state.unsubs.push(db.collection('appdata').doc('salesTotals').onSnapshot(function(snap){
+      if(snap.exists){
+        state.managerSales = snap.data().managerSales || {};
+        state.ntoSales = snap.data().ntoSales || {};
+        render();
+      }
+    }));
+  }
+
+  // ---------------- notify manager/admin of new NTO activity (submit / resubmit) ----------------
+  function checkForNewNtoActivity(newBundles){
+    var prevMap = {};
+    state.bundles.forEach(function(b){ prevMap[b.id] = b.status; });
+
+    if(state.knownBundleIds===null){
+      state.knownBundleIds = true;
+      return;
+    }
+
+    var newOnes = [];
+    newBundles.forEach(function(b){
+      if(b.status==='pending' || b.status==='resubmit'){
+        if(prevMap[b.id]===undefined || prevMap[b.id]!==b.status){
+          newOnes.push(b);
+          delete state.notifiedBundleIds[b.id]; // fresh submit/resubmit -- allow re-notifying
+        }
+      }
+    });
+
+    if(newOnes.length && state.currentUser && (state.currentUser.role==='manager' || state.currentUser.role==='admin')){
+      // For a manager, only ring immediately for bundles that are actually
+      // theirs to claim right now (their own customer, or a customer with
+      // no owning manager). Bundles reserved for a different manager stay
+      // silent for this manager until the assignment window elapses --
+      // see checkForManagerEscalations(), which fires later.
+      var mine = state.currentUser.role==='admin' ? newOnes : newOnes.filter(function(b){
+        return isBundleClaimableByManager(b, state.currentUser.username);
+      });
+      if(mine.length){
+        if(state.currentUser.role==='manager') playNotificationSound();
+        var b0 = mine[0];
+        state.notifiedBundleIds[b0.id] = true;
+        fireNotification('نوی بنډل راغی', b0.ntoUsername+' یو بنډل ('+b0.field2+') ولیږه.');
+        showToast('نوی بنډل راغی — '+b0.ntoUsername);
+      }
+    }
+    scheduleAssignWindowRefresh();
+  }
+
+  // ---------------- notify a manager once an assignment window elapses and a
+  // bundle that wasn't theirs opens up to all managers ----------------
+  function checkForManagerEscalations(){
+    if(!state.currentUser || state.currentUser.role!=='manager') return;
+    var opened = state.bundles.filter(function(b){
+      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return false;
+      if(state.notifiedBundleIds[b.id]) return false;
+      return isBundleClaimableByManager(b, state.currentUser.username);
+    });
+    if(opened.length){
+      playNotificationSound();
+      opened.forEach(function(b){ state.notifiedBundleIds[b.id] = true; });
+      var b0 = opened[0];
+      fireNotification('یو بنډل اوس تاسو ته هم خلاص دی', b0.ntoUsername+' — ('+b0.field2+')');
+      showToast('یو بنډل اوس ستاسو لپاره هم خلاص شو — '+b0.ntoUsername);
+    }
+  }
+
+  // ---------------- notify NTO when their bundle gets approved/rejected ----------------
+  function checkForStatusChangesForNto(newBundles){
+    if(!state.currentUser || state.currentUser.role!=='nto') return;
+    var prevMap = {};
+    state.bundles.forEach(function(b){ prevMap[b.id] = b.status; });
+
+    newBundles.forEach(function(b){
+      if(b.ntoUsername!==state.currentUser.username) return;
+      var was = prevMap[b.id];
+      if(was===undefined) return; // don't alert for the initial load / own fresh submit
+      if(was!==b.status && (b.status==='approved' || b.status==='rejected')){
+        fireNotification(
+          b.status==='approved' ? 'ستاسو بنډل فعاله شو' : 'ستاسو بنډل رد شو',
+          b.field2+' — '+(b.comment ? b.comment : '')
+        );
+      }
+    });
+  }
+
+  function playNotificationSound(){
+    try{
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if(!Ctx) return;
+      var ctx = new Ctx();
+      var now = ctx.currentTime;
+      // A soft three-note ascending chime (bell-like), closer to a phone alert tone
+      // than a flat single beep.
+      var notes = [
+        {freq:988,  start:0.00, dur:0.16},
+        {freq:1319, start:0.13, dur:0.16},
+        {freq:1568, start:0.26, dur:0.34}
+      ];
+      notes.forEach(function(n){
+        var o = ctx.createOscillator();
+        var g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = n.freq;
+        g.gain.setValueAtTime(0.0001, now+n.start);
+        g.gain.exponentialRampToValueAtTime(0.22, now+n.start+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now+n.start+n.dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(now+n.start);
+        o.stop(now+n.start+n.dur+0.02);
+      });
+      setTimeout(function(){ try{ ctx.close(); }catch(e){} }, 900);
+    }catch(e){}
+    if(navigator.vibrate){ try{ navigator.vibrate([150,60,150]); }catch(e){} }
+  }
+
+  // ---------------- PWA: register service worker ----------------
+  // Auto-update: whenever a newer sw.js/cache gets installed in the
+  // background, force a one-time reload so people actually get the new
+  // code instead of being stuck on a cached copy of index.html/app logic
+  // until they manually clear their browser cache.
+  if('serviceWorker' in navigator){
+    var swReloaded = false;
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').then(function(reg){
+        if(!reg) return;
+        reg.update().catch(function(){});
+        if(reg.waiting && navigator.serviceWorker.controller){
+          reg.waiting.postMessage && reg.waiting.postMessage('SKIP_WAITING');
+        }
+        reg.addEventListener('updatefound', function(){
+          var nw = reg.installing;
+          if(!nw) return;
+          nw.addEventListener('statechange', function(){
+            if(nw.state==='installed' && navigator.serviceWorker.controller && !swReloaded){
+              swReloaded = true;
+              window.location.reload();
+            }
+          });
+        });
+      }).catch(function(){ /* ignore */ });
+      if(navigator.serviceWorker.controller){
+        navigator.serviceWorker.addEventListener('controllerchange', function(){
+          if(!swReloaded){ swReloaded = true; window.location.reload(); }
+        });
+      }
+    });
+  }
+
+  // ---------------- AUTO LOGOUT ON NEW DEPLOYMENT ----------------
+  // The current HTML contains a build version. Every 30 seconds, compare it
+  // with a fresh copy of the page. If a newer version is deployed, log out,
+  // clear the old session and reload so the user gets the new code.
+  var versionCheckTimer = null;
+  function startVersionCheck(){
+    if(versionCheckTimer) clearInterval(versionCheckTimer);
+    versionCheckTimer = setInterval(function(){
+      if(!state.currentUser) return;
+      var url = window.location.href.split('#')[0];
+      url += (url.indexOf('?')>=0?'&':'?')+'__appv='+Date.now();
+      fetch(url, {cache:'no-store', credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(html){
+        var m = html.match(/<meta[^>]+name=["']app-build-version["'][^>]+content=["']([^"']+)["'][^>]*>/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']app-build-version["'][^>]*>/i);
+        if(m && m[1] && m[1]!==APP_BUILD_VERSION){
+          clearSavedSession();
+          state.currentUser = null;
+          state.mySessionToken = null;
+          showToast('نوی بدلون راغلی، مهرباني وکړئ بیا داخل شئ.');
+          setTimeout(function(){ window.location.reload(); }, 700);
+        }
+      }).catch(function(){});
+    }, 30000);
+  }
+
+  // ---------------- close the top-bar user dropdown when clicking elsewhere ----------------
+  document.addEventListener('click', function(e){
+    if(!state.userMenuOpen) return;
+    var wrap = document.getElementById('mt-user-wrap');
+    if(wrap && wrap.contains(e.target)) return;
+    state.userMenuOpen = false;
+    render();
+  });
+
+  // ---------------- init ----------------
+  loadAll().then(function(){
+    // Repair the historical report data before showing the dashboard. If the
+    // migration cannot run because of a temporary connection problem, keep the
+    // app usable and retry on the next page load.
+    return migrateApprovedBundleSales().catch(function(err){
+      console.warn('sales migration failed', err);
+    });
+  }).then(function(){
+    restoreSession();
+    state.loading = false;
+    attachListeners();
+    scheduleAssignWindowRefresh();
+    render();
+    startVersionCheck();
+  });
+
+})();
+</script>
+</body>
+</html>
