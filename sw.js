@@ -31,7 +31,7 @@
 // browser tabs and the installed app within about a minute automatically.
 // ---------------------------------------------------------------------------
 
-var CACHE_VERSION = 'v8'; // <-- bump this string on every deploy
+var CACHE_VERSION = 'v9'; // <-- bump this string on every deploy
 var CACHE_NAME = 'roshan-portal-' + CACHE_VERSION;
 
 // Only this site's own root document. Keep this list small and same-origin
@@ -72,6 +72,52 @@ self.addEventListener('message', function(event){
   if(event.data === 'SKIP_WAITING'){
     self.skipWaiting();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Real push notifications (Firebase Cloud Messaging / Web Push).
+//
+// This is what makes notifications arrive even when the app is fully closed
+// or backgrounded -- unlike the in-page Firestore listeners in index.html,
+// which only run while the app is actually open and visible. A server-side
+// Cloud Function (see functions/index.js) sends a push message to this
+// device's FCM token; the OS wakes this service worker up to handle it,
+// completely independent of whether any tab/app window is open.
+// ---------------------------------------------------------------------------
+self.addEventListener('push', function(event){
+  var data = {};
+  try{ data = event.data ? event.data.json() : {}; }catch(e){}
+
+  // Support both the FCM "notification" payload shape and a plain "data"
+  // payload shape, so this works no matter how the Cloud Function sends it.
+  var n = data.notification || {};
+  var d = data.data || data || {};
+  var title = n.title || d.title || 'روشن پورټال';
+  var body = n.body || d.body || '';
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      vibrate: [200,100,200],
+      data: d
+    })
+  );
+});
+
+// Tapping a notification focuses an already-open tab/app window if there is
+// one, or opens a new one otherwise.
+self.addEventListener('notificationclick', function(event){
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({type:'window', includeUncontrolled:true}).then(function(list){
+      for(var i=0;i<list.length;i++){
+        if('focus' in list[i]) return list[i].focus();
+      }
+      if(self.clients.openWindow) return self.clients.openWindow('./index.html');
+    })
+  );
 });
 
 self.addEventListener('fetch', function(event){
