@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260903-06">
+<meta name="app-build-version" content="20260905-01">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -449,7 +449,9 @@
     bundleSearch:'',
     bundlePage:0,
     userSearch:{manager:'', nto:''},
-    userPage:{manager:0, nto:0}
+    userPage:{manager:0, nto:0},
+    bundleDraft:{field1:'', field2:''},
+    deactivateDraft:{field1:''}
   };
   var PAGE_SIZE = 20;
   // How long (ms) a freshly submitted/resubmitted bundle is reserved for the
@@ -1124,23 +1126,28 @@
       '<div class="card">'+
         '<h4>نوی بنډل واستوئ</h4>'+
         '<div class="row">'+
-          '<div class="field"><label>شمیره</label><input id="bd-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
-          '<div class="field"><label>د بنډل نوم</label><input id="bd-f2" type="text" placeholder="د بنډل نوم ولیکئ"></div>'+
+          '<div class="field"><label>شمیره</label><input id="bd-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره" value="'+escapeHtml(state.bundleDraft.field1)+'"></div>'+
+          '<div class="field"><label>د بنډل نوم</label><input id="bd-f2" type="text" placeholder="د بنډل نوم ولیکئ" value="'+escapeHtml(state.bundleDraft.field2)+'"></div>'+
           '<button class="btn btn-gold" id="bd-submit">واستوئ</button>'+
         '</div>'+
       '</div>'+
       '<div class="card"><h4>ستاسو د بنډل تاریخچه</h4><div id="bd-list"></div></div>';
 
     var f1 = document.getElementById('bd-f1');
+    var f2 = document.getElementById('bd-f2');
     f1.addEventListener('input', function(){
       var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
+      state.bundleDraft.field1 = v;
+    });
+    f2.addEventListener('input', function(){
+      state.bundleDraft.field2 = f2.value;
     });
 
     document.getElementById('bd-submit').onclick = function(){
       var v1 = f1.value.trim();
-      var v2 = document.getElementById('bd-f2').value.trim();
+      var v2 = f2.value.trim();
       if(!v1 || !v2){ showToast('مهرباني وکړئ دواړه خانې ډکې کړئ.'); return; }
       var entry = {
         id: uid(),
@@ -1153,6 +1160,7 @@
         ntoSeen: true
       };
       state.bundles.unshift(entry);
+      state.bundleDraft = {field1:'', field2:''};
       persistBundles().then(function(){
         showToast('بنډل واستول شو، اوس د تمې په حالت کې دی.');
         state.section = 'sales';
@@ -1179,7 +1187,7 @@
       '<div class="card">'+
         '<h4>د بنډلونو د غیري فعالولو لپاره شمیره ولیکئ</h4>'+
         '<div class="row">'+
-          '<div class="field"><label>شمیره</label><input id="dz-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
+          '<div class="field"><label>شمیره</label><input id="dz-f1" type="text" inputmode="numeric" placeholder="یوازې شمیره" value="'+escapeHtml(state.deactivateDraft.field1)+'"></div>'+
           '<button class="btn btn-gold" id="dz-submit">واستوئ</button>'+
         '</div>'+
       '</div>'+
@@ -1190,6 +1198,7 @@
       var v = normalizeDigits(f1.value).replace(/[^0-9]/g,'');
       v = v.replace(/^0+(?=\d)/,'');
       f1.value = v;
+      state.deactivateDraft.field1 = v;
     });
 
     document.getElementById('dz-submit').onclick = function(){
@@ -1207,6 +1216,7 @@
         ntoSeen: true
       };
       state.bundles.unshift(entry);
+      state.deactivateDraft = {field1:''};
       persistBundles().then(function(){
         showToast('غوښتنه واستول شوه، اوس د تمې په حالت کې ده.');
         state.section = 'sales';
@@ -1547,7 +1557,7 @@
       if(b.type==='deactivate'){
         state.modal = {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus};
       }else{
-        state.modal = {type:'process', bundleId:bundleId, previousStatus:previousStatus};
+        state.modal = {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
       }
       render();
     });
@@ -1708,7 +1718,7 @@
   function openResubmitModal(bundleId){
     var b = state.bundles.find(function(x){return x.id===bundleId;});
     if(!b || b.status!=='rejected') return;
-    state.modal = {type:'resubmit', bundleId:bundleId};
+    state.modal = {type:'resubmit', bundleId:bundleId, draftComment:''};
     render();
   }
 
@@ -1814,7 +1824,7 @@
             '</div>'+
             '<div class="proc-bundle-name">'+escapeHtml(procB?procB.field2:'')+'</div>'+
           '</div>'+
-          '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
+          '<div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ...">'+escapeHtml(state.modal.draftComment||'')+'</textarea></div>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px 0;">'+
             '<button class="btn btn-sm btn-ghost" id="proc-quick-1">پیسې اضافه کړه</button>'+
             '<button class="btn btn-sm btn-ghost" id="proc-quick-2">پیسې کمې دي</button>'+
@@ -1847,7 +1857,7 @@
       layer.innerHTML =
         '<div class="modal-card">'+
           '<h3>بیا ځلې استول</h3>'+
-          '<div class="field"><label>کمینټ</label><textarea id="resub-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ..."></textarea></div>'+
+          '<div class="field"><label>کمینټ</label><textarea id="resub-comment" rows="3" placeholder="خپل کمینټ دلته ولیکئ...">'+escapeHtml(state.modal.draftComment||'')+'</textarea></div>'+
           '<div class="modal-actions">'+
             '<button class="btn btn-gold btn-block" id="resub-submit">استول</button>'+
           '</div>'+
@@ -1897,12 +1907,20 @@
         var copyBtn = document.getElementById('proc-copy-number');
         if(copyBtn){ copyBtn.onclick = function(){ var pb = state.bundles.find(function(x){return x.id===state.modal.bundleId;}); if(pb) copyToClipboard(pb.field1); }; }
       })();
+      (function(){
+        var pc = document.getElementById('proc-comment');
+        if(pc){ pc.addEventListener('input', function(){ if(state.modal) state.modal.draftComment = pc.value; }); }
+      })();
     }else if(state.modal.type==='deactivate-confirm'){
       document.getElementById('deact-confirm').onclick = submitDeactivate;
       document.getElementById('deact-cancel').onclick = closeProcessModal;
     }else if(state.modal.type==='resubmit'){
       document.getElementById('resub-submit').onclick = submitResubmit;
       document.getElementById('resub-cancel').onclick = function(){ state.modal=null; render(); };
+      (function(){
+        var rc = document.getElementById('resub-comment');
+        if(rc){ rc.addEventListener('input', function(){ if(state.modal) state.modal.draftComment = rc.value; }); }
+      })();
     }
   }
 
