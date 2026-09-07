@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="1.3.0">
+<meta name="app-build-version" content="20260907-02">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1799,18 +1799,41 @@
     b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
 
+    // Update the screen immediately. Do not wait for Firestore before closing
+    // the modal: this makes Approve/Reject feel instant like a mobile app.
+    var finishedMessage = decision==='approved' ? 'بنډل فعاله شو.' : 'بنډل رد شو.';
+    state.modal = null;
+    render();
+
     if(decision!=='approved'){
       persistBundles().then(function(){
         showToast('بنډل رد شو.');
-        state.modal = null;
-        render();
-      }).catch(function(){ showToast('د بنډل د ثبت پر مهال تېروتنه وشوه.'); });
+      }).catch(function(err){
+        console.error(err);
+        showToast('د بنډل د ثبت پر مهال تېروتنه وشوه.');
+      });
       return;
     }
 
     var amount = extractNumber(comment);
     var ntoUser = b.ntoUsername;
     var totalsRef = db.collection('appdata').doc('salesTotals');
+
+    // Optimistically update the visible sales counters before the network
+    // transaction completes. The transaction below remains the source of truth.
+    if(!state.managerSales[approvedManager]) state.managerSales[approvedManager] = {total:0,count:0};
+    state.managerSales[approvedManager] = {
+      total:(Number(state.managerSales[approvedManager].total)||0) + amount,
+      count:(Number(state.managerSales[approvedManager].count)||0) + 1
+    };
+    if(ntoUser){
+      if(!state.ntoSales[ntoUser]) state.ntoSales[ntoUser] = {total:0,count:0};
+      state.ntoSales[ntoUser] = {
+        total:(Number(state.ntoSales[ntoUser].total)||0) + amount,
+        count:(Number(state.ntoSales[ntoUser].count)||0) + 1
+      };
+    }
+    showToast('بنډل فعاله شو او فروشات ثبتېږي...');
     var bundlesRef = db.collection('appdata').doc('bundles');
     var bundleList = state.bundles.slice();
 
@@ -1849,19 +1872,20 @@
         tx.set(bundlesRef, {list: bundleList}, {merge:true});
       });
     }).then(function(){
-      // Refresh the counters from Firestore so the فروشات page always displays
-      // the server value immediately after activation.
-      return totalsRef.get();
-    }).then(function(snap){
-      var d = snap.exists ? (snap.data()||{}) : {};
-      state.managerSales = d.managerSales || {};
-      state.ntoSales = d.ntoSales || {};
       showToast('بنډل فعاله شو او فروشات د مشتری او مدیر دواړو حسابونو ته جمع شول.');
-      state.modal = null;
-      render();
     }).catch(function(err){
       console.error(err);
-      showToast('د فعالولو یا فروشاتو د ثبت پر مهال تېروتنه وشوه. بیا هڅه وکړئ.');
+      // The server transaction is authoritative. Reload the persisted totals
+      // if the background write fails, without reopening the modal.
+      return totalsRef.get().then(function(snap){
+        var d = snap.exists ? (snap.data()||{}) : {};
+        state.managerSales = d.managerSales || {};
+        state.ntoSales = d.ntoSales || {};
+        render();
+        showToast('د فعالولو یا فروشاتو د ثبت پر مهال تېروتنه وشوه. بیا هڅه وکړئ.');
+      }).catch(function(){
+        showToast('د فعالولو یا فروشاتو د ثبت پر مهال تېروتنه وشوه. بیا هڅه وکړئ.');
+      });
     });
   }
 
@@ -1876,10 +1900,14 @@
     b.processingBy = null;
     b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
+    // Close immediately; persist the decision in the background.
+    state.modal = null;
+    render();
     persistBundles().then(function(){
       showToast('بنډلونه غیري فعاله شول.');
-      state.modal = null;
-      render();
+    }).catch(function(err){
+      console.error(err);
+      showToast('د غیري فعالولو د ثبت پر مهال تېروتنه وشوه.');
     });
   }
 
