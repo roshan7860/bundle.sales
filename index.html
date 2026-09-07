@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ps" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>د شرکت مدیریتي سیسټم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100%;font-family:Vazirmatn,"Segoe UI",Tahoma,sans-serif;background:#EEF1F4;color:#1B2430}
+button,input,textarea,select{font-family:inherit}
+.login-wrap,.blocked-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(180deg,#101826,#182234)}
+.login-card,.blocked-card{background:#fff;width:100%;max-width:410px;border-radius:16px;padding:34px 30px;box-shadow:0 30px 60px #0006}
+.brand{display:flex;align-items:center;gap:10px}.mark{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#B8862B,#8f6a20);flex:none}
+.brand b{font-size:19px}.sub{color:#5B6675;font-size:13.5px;margin:6px 0 25px}
+.field{margin-bottom:15px;flex:1;min-width:170px}.field label{display:block;font-size:13px;color:#5B6675;margin-bottom:6px;font-weight:600}
+.field input,.field textarea,.field select{width:100%;padding:11px 13px;border:1.5px solid #DDE2E8;border-radius:8px;background:#FBFCFD;color:#1B2430;outline:none}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:#B8862B}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 16px;border:0;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}
+.btn-primary{background:#1B2430;color:#fff}.btn-gold{background:#B8862B;color:#fff}.btn-ok{background:#2E7D5B;color:#fff}.btn-danger{background:#B3432B;color:#fff}.btn-info{background:#2E5FA3;color:#fff}.btn-ghost{background:#fff;color:#5B6675;border:1.5px solid #DDE2E8}.btn-sm{padding:6px 11px;font-size:12.5px}.btn-block{width:100%}
+.error-box{background:#F6E1DA;color:#B3432B;padding:10px;border-radius:8px;margin-bottom:15px;font-size:13px}
+.shell{display:flex;min-height:100vh}.sidebar{width:245px;flex:none;background:#101826;color:#C9D1DB;display:flex;flex-direction:column;padding:22px 16px}
+.sidebar .brand{padding:0 6px 20px;border-bottom:1px solid #fff1;margin-bottom:15px}.sidebar .brand b{color:#fff;font-size:15.5px}.sidebar .mark{width:30px;height:30px}
+.role-tag{font-size:11.5px;color:#7C8698;background:#ffffff0f;padding:4px 10px;border-radius:20px;display:inline-block;margin-bottom:15px}
+.nav-item{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border-radius:8px;margin-bottom:4px;color:#C9D1DB;cursor:pointer;font-size:14px;font-weight:600}.nav-item:hover{background:#ffffff0f}.nav-item.active{background:#B8862B;color:#fff}
+.nav-badge{background:#B3432B;color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.spacer{flex:1}.user-box{border-top:1px solid #fff1;padding-top:14px;margin-top:15px}.uname{color:#fff;font-size:13px;font-weight:700;margin-bottom:8px}
+.main{flex:1;padding:30px 34px;overflow:auto;min-width:0}.main-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:22px}.main-header h2{margin:0;font-size:21px}.header-actions{display:flex;gap:8px}
+.card{background:#fff;border:1px solid #DDE2E8;border-radius:10px;padding:21px;margin-bottom:20px}.card h4{margin:0 0 15px;font-size:15px}
+.row{display:flex;gap:13px;flex-wrap:wrap;align-items:flex-end}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px;border-bottom:1px solid #DDE2E8;text-align:right;white-space:nowrap}th{color:#5B6675;font-size:12px}tr:last-child td{border-bottom:0}
+.badge{display:inline-flex;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700}.clickable{cursor:pointer;text-decoration:underline}
+.pending{background:#F3E7CE;color:#7a5a17}.process{background:#DDE8F6;color:#2E5FA3}.approved,.enabled{background:#DFF0E7;color:#2E7D5B}.rejected,.disabled{background:#F6E1DA;color:#B3432B}.resubmit{background:#EFE3F7;color:#6b3fa0}
+.empty-state{text-align:center;color:#5B6675;padding:25px}.small-muted{font-size:12px;color:#5B6675}.report-total{font-size:28px;font-weight:800;color:#2E7D5B}
+.modal-backdrop{position:fixed;inset:0;background:#10182699;display:flex;align-items:center;justify-content:center;padding:20px;z-index:1000}.modal-card{background:#fff;border-radius:14px;padding:25px;max-width:470px;width:100%;box-shadow:0 30px 60px #0006}.modal-actions{display:flex;gap:10px}.modal-actions .btn{flex:1}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1B2430;color:#fff;padding:11px 20px;border-radius:9px;z-index:2000;font-size:13px}
+@media(max-width:860px){.shell{flex-direction:column}.sidebar{width:100%;padding:13px;flex-direction:row;flex-wrap:wrap;align-items:center}.sidebar .brand{border:0;margin:0;padding:0}.role-tag{margin:0}.nav-wrap{width:100%;display:flex;overflow:auto;gap:4px}.nav-item{white-space:nowrap}.spacer{display:none}.user-box{border:0;padding:0;margin:0 0 0 auto}.main{padding:20px 14px}.table-wrap{overflow-x:auto}}
+</style>
+</head>
+<body><div id="app"></div>
+<script>
+(function(){
+"use strict";
+
+/* ================= FIREBASE ================= */
+var firebaseConfig={
+ apiKey:"AIzaSyCFI4CdRV6IwyjmifRjUlzzT_28I47vgh0",
+ authDomain:"companyportal-f52e0.firebaseapp.com",
+ projectId:"companyportal-f52e0",
+ storageBucket:"companyportal-f52e0.firebasestorage.app",
+ messagingSenderId:"314049949289",
+ appId:"1:314049949289:web:889ca48f03540261f5fcf8"
+};
+firebase.initializeApp(firebaseConfig);
+var db=firebase.firestore();
+var storage=firebase.storage();
+
+var DEFAULT_ADMIN_USER="admin@roshan.af";
+var DEFAULT_ADMIN_PASS="Roshan.af.admin@af&786";
+
+var state={
+ currentUser:null,users:[],bundles:[],complaints:[],rolls:[],
+ managerSessions:[],section:null,loading:true,error:"",
+ modal:null,reportResetAt:0,salesResetAt:0,unsubs:[],
+ lastBundleCount:0,initializedSnapshot:false
+};
+
+var MENUS={
+ admin:[
+  {key:"managers",label:"د منیجر یوزران"},
+  {key:"ntos",label:"د NTO یوزران"},
+  {key:"sales",label:"د پلور راپور"},
+  {key:"report",label:"راپور"},
+  {key:"rolls",label:"د شرکت مقررات"},
+  {key:"complaints",label:"شکایتونه"}
+ ],
+ manager:[
+  {key:"ntos",label:"د NTO یوزران"},
+  {key:"sales",label:"د پلور راپور"},
+  {key:"report",label:"راپور"}
+ ],
+ nto:[
+  {key:"bundle",label:"بنډل"},
+  {key:"sales",label:"د پلور راپور"},
+  {key:"report",label:"راپور"},
+  {key:"complaints",label:"شکایتونه"}
+ ]
+};
+var ROLE_LABEL={admin:"اډمین",manager:"منیجر",nto:"NTO"};
+
+function sGetDoc(name){
+ return db.collection("appdata").doc(name).get().then(function(s){
+  return s.exists&&s.data().list?s.data().list:null;
+ }).catch(function(){return null});
+}
+function sSetDoc(name,list){return db.collection("appdata").doc(name).set({list:list});}
+function loadJSON(key,fallback){return sGetDoc(key).then(function(v){return v||fallback})}
+function saveJSON(key,obj){return sSetDoc(key,obj)}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function persistUsers(){return saveJSON("users",state.users)}
+function persistBundles(){return saveJSON("bundles",state.bundles)}
+function persistComplaints(){return saveJSON("complaints",state.complaints)}
+function persistRolls(){return saveJSON("rolls",state.rolls)}
+function persistSessions(){return saveJSON("managerSessions",state.managerSessions)}
+
+function ensureSeed(){
+ return loadJSON("users",null).then(function(users){
+  if(users&&users.length){
+   state.users=users;
+   var legacy=state.users.find(function(u){return u.username==="admin"&&u.role==="admin"});
+   if(legacy){legacy.username=DEFAULT_ADMIN_USER;legacy.password=DEFAULT_ADMIN_PASS;return persistUsers()}
+   return null;
+  }
+  state.users=[{username:DEFAULT_ADMIN_USER,password:DEFAULT_ADMIN_PASS,role:"admin",status:"enabled",createdBy:"system"}];
+  return persistUsers();
+ });
+}
+function loadAll(){
+ return Promise.all([
+  ensureSeed(),
+  loadJSON("bundles",[]).then(function(v){state.bundles=v}),
+  loadJSON("complaints",[]).then(function(v){state.complaints=v}),
+  loadJSON("rolls",[]).then(function(v){state.rolls=v}),
+  loadJSON("managerSessions",[]).then(function(v){state.managerSessions=v}),
+  db.collection("appdata").doc("reportMeta").get().then(function(s){
+   if(s.exists){state.reportResetAt=s.data().resetAt||0;state.salesResetAt=s.data().salesResetAt||0}
+  }).catch(function(){})
+ ]);
+}
+function saveMeta(){
+ return db.collection("appdata").doc("reportMeta").set({
+  resetAt:state.reportResetAt,salesResetAt:state.salesResetAt
+ });
+}
+
+/* ================= SECURITY / SINGLE MANAGER LOGIN =================
+   This is a client-side Firestore implementation. For true security,
+   Firebase Authentication + Cloud Functions should be used.
+*/
+function sessionId(){return sessionStorage.getItem("portalSessionId")}
+function setSessionId(v){sessionStorage.setItem("portalSessionId",v)}
+function clearSessionId(){sessionStorage.removeItem("portalSessionId")}
+
+function activateManagerSession(user){
+ var sid=uid();
+ setSessionId(sid);
+ var now=Date.now();
+ state.managerSessions=state.managerSessions.filter(function(x){return x.username!==user.username});
+ state.managerSessions.push({username:user.username,sessionId:sid,updatedAt:now});
+ return persistSessions();
+}
+function sessionIsValid(){
+ if(!state.currentUser||state.currentUser.role!=="manager")return true;
+ var sid=sessionId();
+ var s=state.managerSessions.find(function(x){return x.username===state.currentUser.username});
+ return !!(s&&sid&&s.sessionId===sid);
+}
+function checkOwnSession(){
+ if(state.currentUser&&state.currentUser.role==="manager"&&!sessionIsValid()){
+  state.currentUser=null;clearSessionId();
+  showToast("ستاسو حساب په بل ځای کې Login شوی؛ دا وسیله Log out شوه.");
+  setTimeout(render,50);
+  return false;
+ }
+ return true;
+}
+
+/* ================= NOTIFICATION ================= */
+var audioCtx=null;
+function beep(){
+ try{
+  audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
+  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type="sine";o.frequency.value=880;g.gain.value=.06;
+  o.connect(g);g.connect(audioCtx.destination);o.start();
+  setTimeout(function(){o.frequency.value=660},130);
+  setTimeout(function(){o.stop();g.disconnect();o.disconnect()},280);
+ }catch(e){}
+}
+function requestNotificationPermission(){
+ if("Notification"in window&&Notification.permission==="default"){
+  Notification.requestPermission().catch(function(){});
+ }
+}
+function notifyManagersNewBundle(b){
+ beep();
+ if("Notification"in window&&Notification.permission==="granted"){
+  try{
+   new Notification("نوی NTO بنډل",{
+    body:(b.ntoUsername||"NTO")+" نوی بنډل واستاوه.",
+    tag:"bundle-"+b.id
+   });
+  }catch(e){}
+ }
+}
+function checkBundleChanges(){
+ var n=state.bundles.length;
+ if(state.initializedSnapshot&&n>state.lastBundleCount){
+  var newest=state.bundles.slice().sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0)})[0];
+  if(newest&&newest.status==="pending"&&state.currentUser&&state.currentUser.role==="manager"){
+   notifyManagersNewBundle(newest);
+  }
+ }
+ state.lastBundleCount=n;state.initializedSnapshot=true;
+}
+
+/* ================= RENDER ================= */
+function render(){
+ if(!checkOwnSession())return;
+ var root=document.getElementById("app");
+ if(state.loading){
+  root.innerHTML='<div class="login-wrap"><div class="login-card"><p class="sub">بار کیږي...</p></div></div>';return;
+ }
+ if(!state.currentUser){renderLogin(root);return}
+ var fresh=state.users.find(function(u){return u.username===state.currentUser.username});
+ if(!fresh||fresh.status==="disabled"){
+  state.currentUser=null;clearSessionId();renderLogin(root);return;
+ }
+ state.currentUser={username:fresh.username,role:fresh.role};
+ renderDashboard(root);renderModalLayer();
+}
+function renderLogin(root){
+ root.innerHTML='<div class="login-wrap"><div class="login-card">'+
+ '<div class="brand"><div class="mark"></div><b>شرکت پورټال</b></div>'+
+ '<p class="sub">دننه کیدو لپاره خپل یوزرنوم او پاسورډ ولیکئ</p>'+
+ (state.error?'<div class="error-box">'+escapeHtml(state.error)+"</div>":"")+
+ '<div class="field"><label>یوزرنوم</label><input id="li-user" autocomplete="username"></div>'+
+ '<div class="field"><label>پاسورډ</label><input id="li-pass" type="password" autocomplete="current-password"></div>'+
+ '<button class="btn btn-primary btn-block" id="li-btn">دننه شئ</button></div></div>';
+ document.getElementById("li-btn").onclick=doLogin;
+ document.getElementById("li-pass").addEventListener("keydown",function(e){if(e.key==="Enter")doLogin()});
+}
+function doLogin(){
+ var u=document.getElementById("li-user").value.trim(),p=document.getElementById("li-pass").value;
+ if(!u||!p){state.error="مهرباني وکړئ یوزرنوم او پاسورډ دواړه ولیکئ.";render();return}
+ var found=state.users.find(function(x){return x.username===u});
+ if(!found||found.password!==p){state.error="یوزرنوم یا پاسورډ سم نه دی.";render();return}
+ if(found.status==="disabled"){state.error="دا حساب Disabled دی.";render();return}
+ state.error="";
+ state.currentUser={username:found.username,role:found.role};
+ state.section=MENUS[found.role][0].key;
+ requestNotificationPermission();
+ if(found.role==="manager"){
+  activateManagerSession(found).then(function(){render()});
+ }else render();
+}
+function logout(){
+ if(state.currentUser&&state.currentUser.role==="manager"){
+  state.managerSessions=state.managerSessions.filter(function(x){return x.username!==state.currentUser.username});
+  persistSessions();
+ }
+ state.currentUser=null;clearSessionId();state.section=null;render();
+}
+function renderDashboard(root){
+ var role=state.currentUser.role,menu=MENUS[role];
+ if(!state.section||!menu.find(function(m){return m.key===state.section}))state.section=menu[0].key;
+ var pending=state.bundles.filter(function(b){return b.status==="pending"||b.status==="resubmit"}).length;
+ var unseen=state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username&&(b.status==="approved"||b.status==="rejected")&&!b.ntoSeen}).length;
+ var nav=menu.map(function(m){
+  var badge="";
+  if((role==="admin"||role==="manager")&&m.key==="sales"&&pending)badge='<span class="nav-badge">'+pending+"</span>";
+  if(role==="nto"&&m.key==="sales"&&unseen)badge='<span class="nav-badge">'+unseen+"</span>";
+  return '<div class="nav-item '+(state.section===m.key?"active":"")+'" data-sec="'+m.key+'"><span>'+m.label+"</span>"+badge+"</div>";
+ }).join("");
+ root.innerHTML='<div class="shell"><aside class="sidebar">'+
+ '<div class="brand"><div class="mark"></div><b>شرکت پورټال</b></div>'+
+ '<div class="role-tag">'+ROLE_LABEL[role]+"</div>"+
+ '<div class="nav-wrap">'+nav+'</div><div class="spacer"></div>'+
+ '<div class="user-box"><div class="uname">'+escapeHtml(state.currentUser.username)+'</div>'+
+ '<button class="btn btn-ghost btn-sm btn-block" id="logout">وتل (Logout)</button></div></aside>'+
+ '<main class="main" id="main-area"></main></div>';
+ document.querySelectorAll(".nav-item").forEach(function(el){el.onclick=function(){
+  state.section=el.getAttribute("data-sec");
+  if(role==="nto"&&state.section==="sales"){
+   state.bundles.forEach(function(b){if(b.ntoUsername===state.currentUser.username&&(b.status==="approved"||b.status==="rejected"))b.ntoSeen=true});
+   persistBundles();
+  }
+  render();
+ }});
+ document.getElementById("logout").onclick=logout;
+ renderSection(document.getElementById("main-area"));
+}
+function sectionTitle(k){return({bundle:"بنډل",deactivate:"بنډل غیر فعالول",managers:"د منیجر یوزران",ntos:"د NTO یوزران",sales:"د پلور راپور",report:"راپور",rolls:"د شرکت مقررات",complaints:"شکایتونه"})[k]||""}
+function renderSection(main){
+ var role=state.currentUser.role;
+ main.innerHTML='<div class="main-header" id="header"><h2>'+sectionTitle(state.section)+'</h2><div id="actions" class="header-actions"></div></div><div id="body"></div>';
+ var body=document.getElementById("body"),header=document.getElementById("header"),actions=document.getElementById("actions");
+ if(state.section==="bundle"&&role==="nto")return renderBundle(body);
+  if(state.section==="deactivate"&&role==="nto")return renderDeactivate(body);
+ if(state.section==="managers"&&role==="admin")return renderUsers(body,"manager",true);
+ if(state.section==="ntos"&&(role==="admin"||role==="manager"))return renderUsers(body,"nto",role==="admin");
+ if(state.section==="sales")return renderSales(body,role,actions);
+ if(state.section==="report")return renderReport(body,role,actions);
+ if(state.section==="rolls"&&role==="admin")return renderRolls(body);
+ if(state.section==="complaints")return renderComplaints(body,role);
+ body.innerHTML='<div class="card empty-state">لاسرسی نشته.</div>';
+}
+
+/* ================= BUNDLES ================= */
+function renderBundle(body){
+ var rows=state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username&&(!state.salesResetAt||b.createdAt>state.salesResetAt)});
+ body.innerHTML='<div class="card"><h4>نوی بنډل واستوئ</h4><div class="row">'+
+ '<div class="field"><label>شمیره</label><input id="bf1" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
+ '<div class="field"><label>د بنډل نوم</label><input id="bf2" placeholder="د بنډل نوم ولیکئ"></div>'+
+ '<button class="btn btn-gold" id="bsend">واستوئ</button></div></div>'+
+ '<div class="card"><h4>ستاسو د بنډل تاریخچه</h4><div class="table-wrap" id="blist"></div></div>';
+ document.getElementById("bf1").oninput=function(){this.value=this.value.replace(/[^0-9]/g,"").replace(/^0+(?=\\d)/,"")};
+ document.getElementById("bsend").onclick=function(){
+  var f1=document.getElementById("bf1").value.trim(),f2=document.getElementById("bf2").value.trim();
+  if(!f1||!f2){showToast("مهرباني وکړئ دواړه خانې ډکې کړئ.");return}
+  var b={id:uid(),ntoUsername:state.currentUser.username,field1:f1,field2:f2,status:"pending",createdAt:Date.now(),comment:null,actionedBy:null,actionedAt:null,processingBy:null,ntoSeen:true};
+  state.bundles.unshift(b);persistBundles().then(function(){showToast("بنډل واستول شو.");render()});
+ };
+ document.getElementById("blist").innerHTML=rows.length?'<table><thead><tr><th>شمیره</th><th>بنډل</th><th>حالت</th><th>نیټه</th></tr></thead><tbody>'+
+ rows.map(function(b){return'<tr><td>'+escapeHtml(b.field1)+'</td><td>'+escapeHtml(b.field2)+'</td><td>'+statusBadge(b.status)+'</td><td>'+fmtDate(b.createdAt)+'</td></tr>'}).join("")+
+ '</tbody></table>':'<div class="empty-state">تر اوسه هیڅ بنډل نشته.</div>';
+}
+
+/* ================= DEACTIVATION REQUESTS ================= */
+function renderDeactivate(body){
+  var rows=state.bundles.filter(function(b){return b.ntoUsername===state.currentUser.username&&b.kind==="deactivate"});
+  body.innerHTML='<div class="card"><h4>د بنډل غیر فعالولو غوښتنه</h4><div class="row">'+
+  '<div class="field"><label>شمیره</label><input id="df1" inputmode="numeric" placeholder="یوازې شمیره"></div>'+
+  '<div class="field"><label>د بنډل نوم</label><input id="df2" placeholder="د بنډل نوم ولیکئ"></div>'+
+  '<button class="btn btn-gold" id="dsend">واستوئ</button></div></div>'+
+  '<div class="card"><h4>ستاسو د غیر فعالولو تاریخچه</h4><div class="table-wrap" id="dlist"></div></div>';
+  document.getElementById("df1").oninput=function(){this.value=this.value.replace(/[^0-9]/g,"").replace(/^0+(?=\\d)/,"")};
+  document.getElementById("dsend").onclick=function(){
+    var f1=document.getElementById("df1").value.trim(),f2=document.getElementById("df2").value.trim();
+    if(!f1||!f2){showToast("مهرباني وکړئ دواړه خانې ډکې کړئ.");return}
+    var b={id:uid(),kind:"deactivate",ntoUsername:state.currentUser.username,field1:f1,field2:f2,status:"pending",createdAt:Date.now(),comment:null,actionedBy:null,actionedAt:null,processingBy:null,ntoSeen:true};
+    state.bundles.unshift(b);persistBundles().then(function(){showToast("د غیر فعالولو غوښتنه واستول شوه.");render()});
+  };
+  document.getElementById("dlist").innerHTML=rows.length?'<table><thead><tr><th>شمیره</th><th>بنډل</th><th>حالت</th><th>یادونه</th><th>نیټه</th></tr></thead><tbody>'+rows.map(function(b){return'<tr><td>'+escapeHtml(b.field1)+'</td><td>'+escapeHtml(b.field2)+'</td><td>'+statusBadge(b.status)+'</td><td>'+(b.comment?escapeHtml(b.comment):"—")+'</td><td>'+fmtDate(b.createdAt)+'</td></tr>'}).join("")+'</tbody></table>':'<div class="empty-state">تر اوسه هیڅ غوښتنه نشته.</div>';
+}
+
+/* ================= SALES ================= */
+function renderSales(body,role,actions){
+ if(role==="admin"){
+  actions.innerHTML='<button class="btn btn-danger btn-sm" id="sales-reset" title="د پلور راپور ټول Reset">↻ ریسټ</button>';
+ }else if(role==="manager"){
+  actions.innerHTML='<button class="btn btn-gold btn-sm" id="sales-export">💾 اکسېل</button>';
+ }else actions.innerHTML="";
+ var rows=state.bundles.filter(function(b){return !state.salesResetAt||b.createdAt>state.salesResetAt});
+ if(!rows.length){body.innerHTML='<div class="card empty-state">هیڅ ثبت شوی معلومات نشته.</div>'}
+ else{
+  var can=role==="admin"||role==="manager";
+  body.innerHTML='<div class="card"><div class="table-wrap"><table><thead><tr>'+
+  (role!=="nto"?'<th>NTO یوزر</th>':"")+
+  '<th>شمیره</th><th>بنډل نوم</th><th>حالت</th>'+
+  (can?'<th>عمل کوونکی</th>':"")+'<th>کمینټ</th><th>نیټه</th>'+
+  (role==="nto"?'<th></th>':"")+
+  '</tr></thead><tbody>'+rows.map(function(b){
+   var sc=statusBadge(b.status);
+   if(can&&(b.status==="pending"||b.status==="resubmit"))sc='<span class="badge clickable '+badgeClass(b.status)+'" data-process="'+b.id+'">'+statusLabel(b.status)+"</span>";
+   return'<tr>'+(role!=="nto"?'<td>'+escapeHtml(b.ntoUsername)+"</td>":"")+
+   '<td>'+escapeHtml(b.field1)+'</td><td>'+escapeHtml(b.field2)+'</td><td>'+sc+'</td>'+
+   (can?'<td>'+(b.actionedBy?escapeHtml(b.actionedBy):"—")+"</td>":"")+
+   '<td>'+(b.comment?escapeHtml(b.comment):"—")+'</td><td>'+fmtDate(b.createdAt)+"</td>"+
+   (role==="nto"?'<td>'+(b.status==="rejected"?'<button class="btn btn-info btn-sm" data-resubmit="'+b.id+'">ریسبمیټ</button>':"")+"</td>":"")+
+   "</tr>";
+  }).join("")+"</tbody></table></div></div>";
+ }
+ if(document.getElementById("sales-reset"))document.getElementById("sales-reset").onclick=function(){
+  if(!confirm("آیا ډاډه یاست؟ د پلور راپور او د ټولو NTO حسابونو د بنډل معلومات به پاک شي."))return;
+  state.salesResetAt=Date.now();state.bundles=[];state.lastBundleCount=0;
+  Promise.all([persistBundles(),saveMeta()]).then(function(){showToast("د پلور راپور ټول معلومات پاک شول.");render()});
+ };
+ if(document.getElementById("sales-export"))document.getElementById("sales-export").onclick=function(){
+  var data=rows.map(function(b){return{"NTO یوزر":b.ntoUsername,"شمیره":b.field1,"بنډل نوم":b.field2,"حالت":statusLabel(b.status),"عمل کوونکی":b.actionedBy||"","کمینټ":b.comment||"","نیټه":fmtDate(b.createdAt)}});
+  exportXlsx(data,"manager-sales-"+Date.now()+".xlsx");
+ };
+ document.querySelectorAll("[data-process]").forEach(function(el){el.onclick=function(){openProcessSmart(el.getAttribute("data-process"))}});
+ document.querySelectorAll("[data-resubmit]").forEach(function(el){el.onclick=function(){openResubmit(el.getAttribute("data-resubmit"))}});
+}
+
+/* ================= PROCESS ================= */
+function openProcess(id){
+  var b=state.bundles.find(function(x){return x.id===id});if(!b)return;
+  if(b.status!=="pending"&&b.status!=="resubmit")return;
+  var old=b.status;b.status="in_process";b.processingBy=state.currentUser.username;
+  state.modal={type:"process",id:id,old:old};
+  persistBundles().then(function(){render();});
+}
+function submitDecision(decision){
+  var el=document.getElementById("proc-comment"),comment=el?el.value.trim():"";
+  if(!comment){showToast("مهرباني وکړئ کمینټ ولیکئ.");return}
+  var b=state.bundles.find(function(x){return x.id===state.modal.id});if(!b)return;
+  b.status=decision;b.comment=comment;b.actionedBy=state.currentUser.username;b.actionedAt=Date.now();b.processingBy=null;b.ntoSeen=false;
+  state.modal=null;render();showToast(decision==="approved"?"بنډل تصویب شو.":"بنډل رد شو.");
+  persistBundles().catch(function(){showToast("د بنډل د خوندي کولو ستونزه وشوه؛ بیا انټرنېټ وګورئ.")});
+}
+function submitDeactivateDecision(decision){
+  var b=state.bundles.find(function(x){return x.id===state.modal.id});if(!b)return;
+  var text=decision==="disabled"?"غیر فعال شو":"شمیره غلطه ده";
+  var ok=confirm(decision==="disabled"?"ایا ډاډه یاست چې دا بنډل غیر فعال شو؟":"ایا ډاډه یاست چې شمیره غلطه ده او غوښتنه رد شي؟");
+  if(!ok)return;
+  b.status=decision;b.comment=text;b.actionedBy=state.currentUser.username;b.actionedAt=Date.now();b.processingBy=null;b.ntoSeen=false;
+  state.modal=null;render();showToast(decision==="disabled"?"بنډل غیر فعال شو.":"غوښتنه رد شوه.");
+  persistBundles().catch(function(){showToast("د غوښتنې د خوندي کولو ستونزه وشوه؛ بیا انټرنېټ وګورئ.")});
+}
+function submitAlreadyActive(){
+  var b=state.bundles.find(function(x){return x.id===state.modal.id});if(!b)return;
+  if(!confirm("ایا ډاډه یاست چې دا بنډل له مخکې څخه فعاله شوی و؟"))return;
+  b.status="rejected";b.comment="ستاسو بنډل له مخکې څخه فعاله شوی دى";b.actionedBy=state.currentUser.username;b.actionedAt=Date.now();b.processingBy=null;b.ntoSeen=false;
+  state.modal=null;render();showToast("بنډل رد شو.");
+  persistBundles().catch(function(){showToast("د بنډل د خوندي کولو ستونزه وشوه؛ بیا انټرنېټ وګورئ.")});
+}
+function closeProcess(){
+  var m=state.modal;if(!m)return;var b=state.bundles.find(function(x){return x.id===m.id});
+  if(b&&b.status==="in_process"){
+    b.status=m.old;b.processingBy=null;
+    persistBundles().then(function(){state.modal=null;render()});
+  }else{state.modal=null;render()}
+}
+function openResubmit(id){var b=state.bundles.find(function(x){return x.id===id});if(b&&b.status==="rejected"){state.modal={type:"resubmit",id:id};render()}}
+function submitResubmit(){
+  var c=document.getElementById("resub-comment").value.trim();if(!c){showToast("مهرباني وکړئ کمینټ ولیکئ.");return}
+  var b=state.bundles.find(function(x){return x.id===state.modal.id});if(!b)return;
+  b.status="resubmit";b.comment=c;b.actionedBy=null;b.actionedAt=null;b.processingBy=null;b.ntoSeen=true;
+  persistBundles().then(function(){state.modal=null;showToast("بنډل بیا وړاندې شو.");render()});
+}
+function openDeactivateProcess(id){
+  var b=state.bundles.find(function(x){return x.id===id});if(!b)return;
+  if(b.status!=="pending"&&b.status!=="resubmit")return;
+  var old=b.status;b.status="in_process";b.processingBy=state.currentUser.username;state.modal={type:"deactivate",id:id,old:old};
+  persistBundles().then(function(){render()});
+}
+function openProcessSmart(id){
+  var b=state.bundles.find(function(x){return x.id===id});if(!b)return;
+  if(b.kind==="deactivate")openDeactivateProcess(id);else openProcess(id);
+}
+function renderModalLayer(){
+  var old=document.getElementById("modal-layer");if(old)old.remove();if(!state.modal)return;
+  var l=document.createElement("div");l.id="modal-layer";l.className="modal-backdrop";
+  var b=state.bundles.find(function(x){return x.id===state.modal.id});
+  if(state.modal.type==="userEdit"){
+    var u=state.users.find(function(x){return x.username===state.modal.username});
+    l.innerHTML='<div class="modal-card"><h3>د یوزر معلومات ایډیټ</h3><div class="field"><label>یوزرنوم</label><input id="eu-user" value="'+escapeAttr(u?u.username:"")+'"></div><div class="field"><label>پاسورډ</label><input id="eu-pass" value="'+escapeAttr(u?u.password:"")+'"></div>'+(u&&u.role==="nto"?'<div class="field"><label>ادرس</label><input id="eu-addr" value="'+escapeAttr(u.address||"")+'"></div><div class="field"><label>اړیکې شمیره</label><input id="eu-contact" value="'+escapeAttr(u.contact||"")+'"></div><div class="field"><label>نوی قرارداد PDF (اختیاري)</label><input id="eu-pdf" type="file" accept="application/pdf"></div>':"")+ '<div class="modal-actions"><button class="btn btn-ok" id="eusave">خوندي کول</button><button class="btn btn-ghost" id="eucancel">لغوه</button></div></div>';
+    document.body.appendChild(l);document.getElementById("eusave").onclick=saveUserEdit;document.getElementById("eucancel").onclick=function(){state.modal=null;render()};
+  }else if(state.modal.type==="deactivate"){
+    l.innerHTML='<div class="modal-card"><div style="font-size:23px;font-weight:800;text-align:center;direction:ltr">'+escapeHtml(b?b.field1:"")+' <button class="btn btn-ghost btn-sm" id="copy-num" title="کاپي">📋</button></div>'+
+      '<div style="height:70px;background:#fff;border:1px solid #EEF1F4;border-radius:8px;margin:14px 0"></div>'+
+      '<div class="modal-actions"><button class="btn btn-ok" id="deact">غیر فعال شو</button><button class="btn btn-danger" id="wrong">شمیره غلطه ده</button></div>'+
+      '<button class="btn btn-info btn-block" id="already" style="margin-top:10px">بنډل فعاله شوی دى</button>'+
+      '<button class="btn btn-ghost btn-block" id="dcancel" style="margin-top:10px">بندول</button></div>';
+    document.body.appendChild(l);
+    document.getElementById("copy-num").onclick=function(){if(b)navigator.clipboard&&navigator.clipboard.writeText(String(b.field1)).then(function(){showToast("شمیره کاپي شوه.")}).catch(function(){showToast("کاپي ونه شوه.")})};
+    document.getElementById("deact").onclick=function(){submitDeactivateDecision("disabled")};
+    document.getElementById("wrong").onclick=function(){submitDeactivateDecision("rejected")};
+    document.getElementById("already").onclick=submitAlreadyActive;
+    document.getElementById("dcancel").onclick=closeProcess;
+  }else if(state.modal.type==="process"){
+    l.innerHTML='<div class="modal-card"><h3>د بنډل پروسس کول</h3><div class="field"><label>کمینټ (اړین دی)</label><textarea id="proc-comment" rows="4" placeholder="کمینټ ولیکئ..."></textarea></div><div class="modal-actions"><button class="btn btn-ok" id="approve">تصویب</button><button class="btn btn-danger" id="reject">ردول</button></div><button class="btn btn-ghost btn-block" id="pcancel" style="margin-top:10px">لغوه</button></div>';
+    document.body.appendChild(l);
+    document.getElementById("approve").onclick=function(){submitDecision("approved")};document.getElementById("reject").onclick=function(){submitDecision("rejected")};document.getElementById("pcancel").onclick=closeProcess;
+  }else{
+    l.innerHTML='<div class="modal-card"><h3>بیا وړاندې کول</h3><div class="field"><label>کمینټ</label><textarea id="resub-comment" rows="4"></textarea></div><button class="btn btn-gold btn-block" id="resub">ریسبمیټ</button><button class="btn btn-ghost btn-block" id="rcancel" style="margin-top:10px">لغوه</button></div>';
+    document.body.appendChild(l);document.getElementById("resub").onclick=submitResubmit;document.getElementById("rcancel").onclick=function(){state.modal=null;render()};
+  }
+}
+
+/* ================= USERS / DELETE / EDIT / APPROVAL ================= */
+function renderUsers(body,targetRole,canToggle){
+  var isNto=targetRole==="nto", label=targetRole==="manager"?"منیجر":"مشتري";
+  var list=state.users.filter(function(u){return u.role===targetRole});
+  if(state.currentUser.role==="manager"&&isNto) list=list.filter(function(u){return u.createdBy===state.currentUser.username});
+  body.innerHTML='<div class="card"><h4>نوی '+label+' حساب جوړ کړئ</h4><div class="row">'+
+    '<div class="field"><label>یوزرنوم</label><input id="nu-user"></div><div class="field"><label>پاسورډ</label><input id="nu-pass" type="text"></div>'+
+    (isNto?'<div class="field"><label>ادرس</label><input id="nu-addr"></div><div class="field"><label>اړیکې شمیره</label><input id="nu-contact"></div><div class="field"><label>د قرارداد PDF</label><input id="nu-pdf" type="file" accept="application/pdf"></div>':"")+ '<button class="btn btn-gold" id="nu-create">جوړ کړئ</button></div></div>'+
+    '<div class="card"><h4>د '+label+' حسابونه</h4><div id="nulist"></div></div>';
+  document.getElementById("nu-create").onclick=function(){createUser(targetRole)};
+  var le=document.getElementById("nulist");
+  if(!list.length){le.innerHTML='<div class="empty-state">تر اوسه هیڅ حساب نشته.</div>';return}
+  le.innerHTML='<div class="table-wrap"><table><thead><tr><th>یوزرنوم</th><th>پاسورډ</th>'+(isNto?'<th>ادرس</th><th>اړیکې شمیره</th><th>قرارداد</th><th>جوړونکی</th>':"")+'<th>حالت</th><th>عمل</th></tr></thead><tbody>'+list.map(function(u){
+    var status=u.status||"enabled";
+    var contract=u.contractUrl?'<a href="'+escapeAttr(u.contractUrl)+'" target="_blank" rel="noopener">کتل / ډاونلوډ</a>':'—';
+    var acts='';
+    if(canToggle&&status!=="pending"&&status!=="rejected_pending")acts+='<button class="btn btn-sm '+(status==="enabled"?"btn-danger":"btn-ok")+'" data-toggle="'+escapeAttr(u.username)+'">'+(status==="enabled"?"ډیسیبل":"انیبل")+'</button> ';
+    if(targetRole==="manager"&&state.currentUser.role==="admin"&&status!=="pending")acts+='<button class="btn btn-info btn-sm" data-edit="'+escapeAttr(u.username)+'">✏️ ایډیټ</button> ';
+    if(isNto&&state.currentUser.role==="manager"&&(status==="rejected_pending"||status==="enabled"))acts+='<button class="btn btn-info btn-sm" data-edit="'+escapeAttr(u.username)+'">✏️ ایډیټ</button> ';
+    if(state.currentUser.role==="admin"&&isNto&&status==="pending")acts+='<button class="btn btn-ok btn-sm" data-approve-user="'+escapeAttr(u.username)+'">تائید</button> <button class="btn btn-danger btn-sm" data-reject-user="'+escapeAttr(u.username)+'">رد</button> ';
+    if(isNto&&state.currentUser.role==="manager"&&status==="rejected_pending")acts+='<button class="btn btn-gold btn-sm" data-resubmit-user="'+escapeAttr(u.username)+'">بیا واستوئ</button> ';
+    acts+='<button class="btn btn-danger btn-sm" data-delete="'+escapeAttr(u.username)+'">🗑️ ډیلیټ</button>';
+    return'<tr><td>'+escapeHtml(u.username)+'</td><td>'+escapeHtml(u.password||"—")+'</td>'+(isNto?'<td>'+escapeHtml(u.address||"—")+'</td><td>'+escapeHtml(u.contact||"—")+'</td><td>'+contract+'</td><td>'+escapeHtml(u.createdBy||"—")+'</td>':"")+'<td>'+userStatusBadge(status)+'</td><td>'+acts+'</td></tr>';
+  }).join('')+'</tbody></table></div>';
+  document.querySelectorAll("[data-toggle]").forEach(function(b){b.onclick=function(){var u=state.users.find(function(x){return x.username===b.getAttribute("data-toggle")});if(!u)return;u.status=u.status==="enabled"?"disabled":"enabled";persistUsers().then(render)}});
+  document.querySelectorAll("[data-delete]").forEach(function(b){b.onclick=function(){deleteUser(b.getAttribute("data-delete"),targetRole)}});
+  document.querySelectorAll("[data-edit]").forEach(function(b){b.onclick=function(){openUserEdit(b.getAttribute("data-edit"),targetRole)}});
+  document.querySelectorAll("[data-approve-user]").forEach(function(b){b.onclick=function(){approveUser(b.getAttribute("data-approve-user"))}});
+  document.querySelectorAll("[data-reject-user]").forEach(function(b){b.onclick=function(){rejectUser(b.getAttribute("data-reject-user"))}});
+  document.querySelectorAll("[data-resubmit-user]").forEach(function(b){b.onclick=function(){resubmitUser(b.getAttribute("data-resubmit-user"))}});
+}
+function userStatusBadge(s){return statusBadge(s==="rejected_pending"?"rejected":s)}
+function uploadContract(file,username){
+  if(!file)return Promise.resolve(null);
+  if(file.type!=="application/pdf"&&!/\\.pdf$/i.test(file.name))return Promise.reject(new Error("PDF_ONLY"));
+  if(file.size>10*1024*1024)return Promise.reject(new Error("PDF_SIZE"));
+  var path="contracts/"+encodeURIComponent(username)+"/"+Date.now()+"-"+file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+  return storage.ref().child(path).put(file).then(function(snap){return snap.ref.getDownloadURL().then(function(url){return{url:url,name:file.name}})});
+}
+function createUser(targetRole){
+  var isNto=targetRole==="nto",u=document.getElementById("nu-user").value.trim(),p=document.getElementById("nu-pass").value.trim();
+  var a=isNto?document.getElementById("nu-addr").value.trim():"",c=isNto?document.getElementById("nu-contact").value.trim():"",file=isNto?document.getElementById("nu-pdf").files[0]:null;
+  if(!u||!p||isNto&&(!a||!c||!file)){showToast(isNto?"یوزرنوم، پاسورډ، ادرس، اړیکه او PDF ټول ولیکئ.":"ټول اړین معلومات ولیکئ.");return}
+  if(isNto&&(file.type!=="application/pdf"&&!/\\.pdf$/i.test(file.name))){showToast("یوازې PDF فایل منل کیږي.");return}
+  if(state.users.some(function(x){return x.username===u})){showToast("دا یوزرنوم مخکې شته.");return}
+  var n={username:u,password:p,role:targetRole,status:isNto?"pending":"enabled",createdBy:state.currentUser.username,createdAt:Date.now()};
+  if(isNto){n.address=a;n.contact=c}
+  showToast(isNto?"معلومات او PDF پورته کیږي...":"حساب جوړیږي...");
+  var upload=isNto?uploadContract(file,u):Promise.resolve(null);
+  upload.then(function(info){if(info){n.contractUrl=info.url;n.contractName=info.name}state.users.push(n);return persistUsers()}).then(function(){showToast(isNto?"مشتري حساب د اډمین تائید ته واستول شو.":targetRole+" حساب جوړ شو.");render()}).catch(function(e){showToast(e.message==="PDF_SIZE"?"PDF باید تر 10MB کم وي.":e.message==="PDF_ONLY"?"یوازې PDF فایل منل کیږي.":"د حساب جوړولو/فایل پورته کولو کې ستونزه وشوه.")});
+}
+function openUserEdit(username,targetRole){
+  var u=state.users.find(function(x){return x.username===username});if(!u)return;
+  state.modal={type:"userEdit",username:username,targetRole:targetRole};render();
+}
+function saveUserEdit(){
+  var m=state.modal,u=state.users.find(function(x){return x.username===m.username});if(!u)return;
+  var nu=document.getElementById("eu-user").value.trim(),np=document.getElementById("eu-pass").value.trim();
+  if(!nu||!np){showToast("یوزرنوم او پاسورډ اړین دي.");return}
+  if(state.users.some(function(x){return x.username===nu&&x!==u})){showToast("دا یوزرنوم مخکې شته.");return}
+  var file=document.getElementById("eu-pdf");file=file?file.files[0]:null;
+  u.username=nu;u.password=np;
+  if(u.role==="nto"){u.address=document.getElementById("eu-addr").value.trim();u.contact=document.getElementById("eu-contact").value.trim()}
+  showToast("معلومات خوندي کیږي...");
+  var upload=file?uploadContract(file,nu):Promise.resolve(null);
+  upload.then(function(info){if(info){u.contractUrl=info.url;u.contractName=info.name}if(state.currentUser.username===m.username)state.currentUser.username=nu;return persistUsers()}).then(function(){state.modal=null;showToast("معلومات ایډیټ او خوندي شول.");render()}).catch(function(e){showToast(e.message==="PDF_SIZE"?"PDF باید تر 10MB کم وي.":e.message==="PDF_ONLY"?"یوازې PDF فایل منل کیږي.":"د ایډیټ کولو ستونزه وشوه.")});
+}
+function approveUser(username){var u=state.users.find(function(x){return x.username===username});if(!u)return;if(!confirm("دا مشتري حساب تائید او فعال شي؟"))return;u.status="enabled";u.adminComment="";persistUsers().then(function(){showToast("مشتري حساب فعال شو.");render()})}
+function rejectUser(username){var u=state.users.find(function(x){return x.username===username});if(!u)return;var c=prompt("د رد کولو کمینټ ولیکئ:","");if(c===null)return;u.status="rejected_pending";u.adminComment=c.trim();persistUsers().then(function(){showToast("حساب رد شو او مدیر ته واستول شو.");render()})}
+function resubmitUser(username){var u=state.users.find(function(x){return x.username===username});if(!u)return;u.status="pending";u.adminComment="";persistUsers().then(function(){showToast("حساب بیا اډمین ته واستول شو.");render()})}
+function deleteUser(username,role){if(!confirm("آیا د "+username+" حساب ډیلیټ کول غواړئ؟"))return;state.users=state.users.filter(function(u){return u.username!==username});if(role==="manager")state.managerSessions=state.managerSessions.filter(function(s){return s.username!==username});Promise.all([persistUsers(),persistSessions()]).then(function(){showToast("حساب ډیلیټ شو.");render()})}
+
+/* ================= REPORTS ================= */
+function extractNumber(str){
+ if(!str)return 0;
+ var m=String(str).match(/-?\d+(?:[.,]\d+)?/);return m?parseFloat(m[0].replace(",",".")):0;
+}
+function reportBundles(){
+ return state.bundles.filter(function(b){return b.status==="approved"&&b.actionedAt&&b.actionedAt>state.reportResetAt});
+}
+function managerReportRows(manager){
+ var rows=reportBundles().filter(function(b){return b.actionedBy===manager});
+ var total=0;rows.forEach(function(b){total+=extractNumber(b.comment)});
+ return{manager:manager,total:total,count:rows.length};
+}
+function allManagerReportRows(){
+ return state.users.filter(function(u){return u.role==="manager"}).map(function(u){return managerReportRows(u.username)});
+}
+function renderReport(body,role,actions){
+ if(role==="admin"){
+  actions.innerHTML='<button class="btn btn-gold btn-sm" id="rep-export">💾 اکسېل</button>';
+  var rows=allManagerReportRows();
+  body.innerHTML='<div class="card"><div class="table-wrap"><table><thead><tr><th>منیجر نوم</th><th>Approved مجموعه</th><th>Approved تعداد</th><th>عمل</th></tr></thead><tbody>'+
+  (rows.length?rows.map(function(r){return'<tr><td>'+escapeHtml(r.manager)+'</td><td>'+r.total.toLocaleString()+' افغانۍ</td><td>'+r.count+'</td><td><button class="btn btn-danger btn-sm" data-mreset="'+escapeAttr(r.manager)+'">↻ ریسټ</button></td></tr>'}).join(""):'<tr><td colspan="4" class="empty-state">هیڅ منیجر نشته.</td></tr>')+
+  '</tbody></table></div></div>';
+  document.querySelectorAll("[data-mreset]").forEach(function(b){b.onclick=function(){resetManagerReport(b.getAttribute("data-mreset"))}});
+  document.getElementById("rep-export").onclick=function(){exportXlsx(rows.map(function(r){return{"منیجر نوم":r.manager,"Approved مجموعه (افغانۍ)":r.total,"Approved تعداد":r.count}}),"manager-report-"+Date.now()+".xlsx")};
+ }else if(role==="manager"){
+  actions.innerHTML='<button class="btn btn-gold btn-sm" id="rep-export">💾 اکسېل</button>';
+  var r=managerReportRows(state.currentUser.username);
+  body.innerHTML='<div class="card"><h4>ستاسو د تصویب شویو راپور</h4><div class="report-total">'+r.total.toLocaleString()+' افغانۍ</div><div class="small-muted" style="margin-top:7px">د تصویب شویو شمیر: '+r.count+'</div></div>';
+  document.getElementById("rep-export").onclick=function(){exportXlsx([{"منیجر":r.manager,"مجموعه (افغانۍ)":r.total,"Approved تعداد":r.count}],"my-manager-report-"+Date.now()+".xlsx")};
+ }else{
+  var rows=reportBundles().filter(function(b){return b.ntoUsername===state.currentUser.username}),total=0;rows.forEach(function(b){total+=extractNumber(b.comment)});
+  body.innerHTML='<div class="card"><h4>ستاسو د تصویب شویو راپور</h4><div class="report-total">'+total.toLocaleString()+' افغانۍ</div><div class="small-muted" style="margin-top:7px">د تصویب شویو شمیر: '+rows.length+'</div></div>';
+ }
+}
+function resetManagerReport(manager){
+ if(!confirm("د "+manager+" راپور Reset شي؟"))return;
+ /* Per-manager reset is stored separately so other managers remain untouched. */
+ var doc=db.collection("appdata").doc("managerReportResets");
+ doc.get().then(function(s){
+  var map=s.exists?(s.data().resets||{}):{};
+  map[manager]=Date.now();
+  return doc.set({resets:map});
+ }).then(function(){
+  showToast("د "+manager+" راپور Reset شو.");
+  /* Keep local reset in memory for immediate UI. */
+  state.managerResetCache=state.managerResetCache||{};state.managerResetCache[manager]=Date.now();
+  render();
+ });
+}
+
+/* ================= RULES / COMPLAINTS ================= */
+function renderRolls(body){
+ body.innerHTML='<div class="card"><h4>نوی مقرره اضافه کړئ</h4><div class="row"><div class="field"><textarea id="rtext" rows="3"></textarea></div><button class="btn btn-gold" id="radd">اضافه کړئ</button></div></div>'+
+ '<div class="card"><h4>موجوده مقررات</h4><div id="rlist"></div></div>';
+ document.getElementById("radd").onclick=function(){var t=document.getElementById("rtext").value.trim();if(!t)return;state.rolls.unshift({id:uid(),text:t,createdAt:Date.now(),createdBy:state.currentUser.username});persistRolls().then(render)};
+ document.getElementById("rlist").innerHTML=state.rolls.length?state.rolls.map(function(r){return'<div style="padding:12px 0;border-bottom:1px solid #DDE2E8">'+escapeHtml(r.text)+'<div class="small-muted">'+fmtDate(r.createdAt)+"</div></div>"}).join(""):'<div class="empty-state">تر اوسه هیڅ مقرره نشته.</div>';
+}
+function renderComplaints(body,role){
+ var mine=role==="nto",rows=mine?state.complaints.filter(function(c){return c.fromUsername===state.currentUser.username}):state.complaints;
+ body.innerHTML=(mine?'<div class="card"><h4>نوی شکایت ولیکئ</h4><div class="row"><div class="field"><textarea id="ctext" rows="3"></textarea></div><button class="btn btn-gold" id="cadd">واستوئ</button></div></div>':"")+
+ '<div class="card"><h4>شکایتونه</h4><div id="clist"></div></div>';
+ if(mine)document.getElementById("cadd").onclick=function(){var t=document.getElementById("ctext").value.trim();if(!t)return;state.complaints.unshift({id:uid(),fromUsername:state.currentUser.username,text:t,createdAt:Date.now()});persistComplaints().then(render)};
+ document.getElementById("clist").innerHTML=rows.length?rows.map(function(c){return'<div style="padding:12px 0;border-bottom:1px solid #DDE2E8">'+(mine?"":'<div class="small-muted">له: '+escapeHtml(c.fromUsername)+"</div>")+escapeHtml(c.text)+'<div class="small-muted">'+fmtDate(c.createdAt)+"</div></div>"}).join(""):'<div class="empty-state">هیڅ شکایت نشته.</div>';
+}
+
+/* ================= UTILS ================= */
+function statusLabel(s){return({pending:"په تمه (Pending)",in_process:"پروسیس کې",approved:"تصویب شوی",rejected:"ردشوی",resubmit:"بیا وړاندې شوی",enabled:"انیبل",disabled:"غیر فعال شو"})[s]||s}
+function badgeClass(s){return({pending:"pending",in_process:"process",approved:"approved",rejected:"rejected",resubmit:"resubmit",enabled:"enabled",disabled:"disabled"})[s]||""}
+function statusBadge(s){return'<span class="badge '+badgeClass(s)+'">'+statusLabel(s)+"</span>"}
+function fmtDate(ts){var d=new Date(ts);return d.toLocaleDateString("en-GB")+" "+d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+function escapeHtml(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function escapeAttr(s){return escapeHtml(s)}
+var toastTimer;
+function showToast(msg){var e=document.querySelector(".toast");if(e)e.remove();e=document.createElement("div");e.className="toast";e.textContent=msg;document.body.appendChild(e);clearTimeout(toastTimer);toastTimer=setTimeout(function(){e.remove()},2800)}
+function exportXlsx(data,name){
+ if(!data.length){showToast("هیڅ معلومات نشته.");return}
+ try{var ws=XLSX.utils.json_to_sheet(data),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Report");XLSX.writeFile(wb,name)}
+ catch(e){showToast("د Excel ډاونلوډ کې تېروتنه وشوه.")}
+}
+
+/* ================= REAL-TIME ================= */
+function attachListeners(){
+ if(state.unsubs.length)return;
+ state.unsubs.push(db.collection("appdata").doc("users").onSnapshot(function(s){if(s.exists&&s.data().list){state.users=s.data().list;if(!state.modal)render()}}));
+ state.unsubs.push(db.collection("appdata").doc("bundles").onSnapshot(function(s){
+  if(s.exists&&s.data().list){state.bundles=s.data().list;checkBundleChanges();if(!state.modal)render()}
+ }));
+ state.unsubs.push(db.collection("appdata").doc("complaints").onSnapshot(function(s){if(s.exists&&s.data().list){state.complaints=s.data().list;if(!state.modal)render()}}));
+ state.unsubs.push(db.collection("appdata").doc("rolls").onSnapshot(function(s){if(s.exists&&s.data().list){state.rolls=s.data().list;if(!state.modal)render()}}));
+ state.unsubs.push(db.collection("appdata").doc("managerSessions").onSnapshot(function(s){
+  state.managerSessions=s.exists&&s.data().list?s.data().list:[];
+  if(state.currentUser&&state.currentUser.role==="manager")checkOwnSession();
+ }));
+ state.unsubs.push(db.collection("appdata").doc("reportMeta").onSnapshot(function(s){
+  if(s.exists){state.reportResetAt=s.data().resetAt||0;state.salesResetAt=s.data().salesResetAt||0;if(!state.modal)render()}
+ }));
+}
+
+/* Manager report per-user reset: load reset map and subtract it from the report. */
+state.managerResetCache={};
+function loadManagerResetCache(){
+ return db.collection("appdata").doc("managerReportResets").get().then(function(s){
+  if(s.exists)state.managerResetCache=s.data().resets||{};
+ }).catch(function(){});
+}
+var originalManagerReportRows=managerReportRows;
+managerReportRows=function(manager){
+ var cutoff=state.managerResetCache[manager]||0;
+ var rows=reportBundles().filter(function(b){return b.actionedBy===manager&&(!cutoff||b.actionedAt>cutoff)});
+ var total=0;rows.forEach(function(b){total+=extractNumber(b.comment)});
+ return{manager:manager,total:total,count:rows.length};
+};
+
+loadAll().then(loadManagerResetCache).then(function(){
+ state.loading=false;state.lastBundleCount=state.bundles.length;state.initializedSnapshot=true;
+ attachListeners();render();
+}).catch(function(e){
+ state.loading=false;state.error="د معلوماتو په لوډ کولو کې ستونزه وشوه.";render();
+});
+})();
+</script>
+</body>
+</html>
