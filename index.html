@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="20260907-02">
+<meta name="app-build-version" content="0.3">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -770,6 +770,15 @@
         state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
         state.salesResetAt = (res.data && res.data.salesResetAt) ? res.data.salesResetAt : {manager:{},nto:{}};
         state.customerSalesResetAt = (res.data && res.data.customerSalesResetAt) ? res.data.customerSalesResetAt : {};
+      }),
+      // Load the current global logout version before attaching the realtime
+      // listener. Otherwise, after the app is closed and opened again, the
+      // listener sees the already-known logout version as a NEW logout and
+      // incorrectly logs the user out with the deployment message.
+      db.collection('appdata').doc('system').get().then(function(snap){
+        state.globalLogoutVersion = snap.exists ? Number((snap.data()||{}).globalLogoutVersion||0) : 0;
+      }).catch(function(err){
+        return Promise.reject(err || new Error('system-read-failed'));
       })
     ]).then(function(){ return rebuildSalesTotalsOnce(); });
   }
@@ -940,12 +949,20 @@
   function doLogout(){
     var oldUsername = state.currentUser && state.currentUser.username;
     var oldUser = oldUsername ? state.users.find(function(x){return x.username===oldUsername;}) : null;
-    // Stop all in-page notifications immediately after logout.
+    // Stop notifications immediately and permanently remove this user's
+    // registered push tokens. A browser can keep receiving FCM in the
+    // background even after the page itself has been logged out, so simply
+    // clearing localStorage is not enough.
     state.notifiedBundleIds = {};
-    if(oldUser && oldUser.fcmTokens && oldUser.fcmTokens.length){
-      oldUser.fcmTokens = [];
-      persistUsers().catch(function(){});
-    }
+    if(oldUser){ oldUser.fcmTokens = []; oldUser.notificationsEnabled = false; }
+    try{
+      if(messaging && messaging.deleteToken){ messaging.deleteToken().catch(function(){}); }
+    }catch(e){}
+    // Remove this username from the server-side FCM registry as well.
+    // Without this, an old browser token can still receive background pushes
+    // even though the web page itself has been logged out.
+    if(oldUsername){ removeNotificationTokensForUser(oldUsername); }
+    if(oldUser){ persistUsers().catch(function(){}); }
     state.currentUser = null;
     state.section = null;
     state.modal = null;
@@ -2763,6 +2780,28 @@
   // active. The resulting token is stored on the logged-in user's record so
   // a server-side Cloud Function can look it up and send that user a push
   // whenever something relevant happens (see functions/index.js).
+  function syncNotificationTokenForUser(username, token){
+    if(!username || !token) return Promise.resolve();
+    var ref = db.collection('appdata').doc('notificationTokens');
+    return ref.get().then(function(snap){
+      var list = snap.exists && Array.isArray(snap.data().list) ? snap.data().list.slice() : [];
+      list = list.filter(function(x){ return x && x.token!==token && x.username!==username; });
+      list.push({username:username, token:token, updatedAt:Date.now()});
+      return ref.set({list:list},{merge:true});
+    });
+  }
+
+  function removeNotificationTokensForUser(username){
+    if(!username) return Promise.resolve();
+    var ref = db.collection('appdata').doc('notificationTokens');
+    return ref.get().then(function(snap){
+      if(!snap.exists) return;
+      var list = Array.isArray(snap.data().list) ? snap.data().list : [];
+      var next = list.filter(function(x){ return !x || x.username!==username; });
+      return ref.set({list:next},{merge:true});
+    }).catch(function(){});
+  }
+
   function setupPushForCurrentUser(){
     if(!messaging) return; // unsupported browser, or VAPID_KEY not filled in yet
     if(!('serviceWorker' in navigator)) return;
@@ -2782,6 +2821,10 @@
         u.fcmTokens.push(token);
         persistUsers();
       }
+      // Keep the server-side push registry in sync with the actual logged-in user.
+      // This is what prevents a previously logged-out browser from receiving
+      // background notifications through the Firebase Cloud Function.
+      syncNotificationTokenForUser(loggedUsername, token).catch(function(){});
     }).catch(function(err){ console.warn('FCM token setup failed', err); });
   }
 
