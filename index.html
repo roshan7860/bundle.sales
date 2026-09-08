@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="0.3">
+<meta name="app-build-version" content="0.4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -434,6 +434,7 @@
     ntoSales:{}, // { ntoUsername: {total, count} } -- persisted independently of the bundles table
     salesResetAt:{manager:{}, nto:{}}, // reset timestamps; approved bundles before these times stay excluded
     customerSalesResetAt:{}, // per-customer reset timestamps; also removes those sales from the customer's manager report
+    otherManagerSalesResetAt:{}, // reset timestamps for sales made on customers belonging to other managers
     globalLogoutVersion:0,
     section:null,
     loading:true,
@@ -770,6 +771,7 @@
         state.ntoSales = (res.data && res.data.ntoSales) ? res.data.ntoSales : {};
         state.salesResetAt = (res.data && res.data.salesResetAt) ? res.data.salesResetAt : {manager:{},nto:{}};
         state.customerSalesResetAt = (res.data && res.data.customerSalesResetAt) ? res.data.customerSalesResetAt : {};
+        state.otherManagerSalesResetAt = (res.data && res.data.otherManagerSalesResetAt) ? res.data.otherManagerSalesResetAt : {};
       }),
       // Load the current global logout version before attaching the realtime
       // listener. Otherwise, after the app is closed and opened again, the
@@ -805,7 +807,7 @@
   function persistBundles(){ return saveJSON('bundles', state.bundles); }
   function persistComplaints(){ return saveJSON('complaints', state.complaints); }
   function persistRolls(){ return saveJSON('rolls', state.rolls); }
-  function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales, salesResetAt: state.salesResetAt, customerSalesResetAt: state.customerSalesResetAt||{}},{merge:true}); }
+  function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales, salesResetAt: state.salesResetAt, customerSalesResetAt: state.customerSalesResetAt||{}, otherManagerSalesResetAt: state.otherManagerSalesResetAt||{}},{merge:true}); }
 
   // ---------------- role menu config ----------------
   var MENUS = {
@@ -815,6 +817,7 @@
       {key:'sales', label:'بنډلونه'},
       {key:'report', label:'راپور-مدير'},
       {key:'nto_report', label:'راپور-مشتري'},
+      {key:'manager_sales', label:'مديرانو فروشات'},
       {key:'rolls', label:'پيغام استول'},
       {key:'complaints', label:'شکایتونه'}
     ],
@@ -1148,7 +1151,7 @@
   }
 
   function sectionTitle(key){
-    var map = {bundle:'نوى بنډل-استول', deactivate:'بنډل-غيري فعالول', managers:'مدير-حسابونه', ntos:'مشتري-اضافه کول', sales:'بنډلونو-حالت', report:'فروشاتو -راپور', nto_report:'مشتري-راپور', rolls:'پيغام-استول', complaints:'راليږل شوي شکایتونه'};
+    var map = {bundle:'نوى بنډل-استول', deactivate:'بنډل-غيري فعالول', managers:'مدير-حسابونه', ntos:'مشتري-اضافه کول', sales:'بنډلونو-حالت', report:'فروشاتو -راپور', nto_report:'مشتري-راپور', manager_sales:'مديرانو فروشات', rolls:'پيغام-استول', complaints:'راليږل شوي شکایتونه'};
     return map[key] || '';
   }
 
@@ -1214,6 +1217,7 @@
     if(state.section==='sales') return renderSalesSection(body, role, headerRow);
     if(state.section==='report') return renderReportSection(body, role, headerRow);
     if(state.section==='nto_report' && (role==='admin'||role==='manager')) return renderNtoReportSection(body, headerRow, role);
+    if(state.section==='manager_sales' && role==='admin') return renderManagerSalesSection(body, headerRow, role);
     if(state.section==='rolls' && role==='admin'){ renderRollsSection(body); addAdminPageExport(headerRow, 'rolls'); return; }
     if(state.section==='complaints') { renderComplaintsSection(body, role); if(role==='admin') addAdminPageExport(headerRow, 'complaints'); return; }
 
@@ -1998,8 +2002,20 @@
 
     if(state.modal.type==='edit-user'){
       var eu=state.users.find(function(x){return x.username===state.modal.username;});
-      layer.innerHTML='<div class="modal-card"><h3>د یوزر معلومات ایډیټ</h3><div class="field"><label>یوزرنوم</label><input id="eu-user" value="'+escapeHtml(eu?eu.username:'')+'"></div><div class="field"><label>پاسورډ</label><input id="eu-pass" value="'+escapeHtml(eu?eu.password:'')+'"></div>'+(eu&&eu.role==='nto'?'<div class="field"><label>ادرس</label><input id="eu-addr" value="'+escapeHtml(eu.address||'')+'"></div><div class="field"><label>اړیکې شمیره</label><input id="eu-contact" value="'+escapeHtml(eu.contact||'')+'"></div>':'')+'<div class="field"><label>حالت</label><select id="eu-status"><option value="enabled">فعاله</option><option value="disabled">غیر فعاله</option><option value="pending_admin">د اډمین تایید ته انتظار</option><option value="rejected_admin">د اډمین لخوا رد شوی</option></select></div><div class="field"><label>جوړونکی</label><input id="eu-createdBy" value="'+escapeHtml(eu?eu.createdBy||'':'')+'"></div><div class="modal-actions"><button class="btn btn-gold" id="eu-save">ذخیره</button><button class="btn btn-ghost" id="eu-cancel">لغوه کول</button></div></div>';
-      setTimeout(function(){var st=document.getElementById('eu-status');if(st&&eu)st.value=eu.status||'enabled';},0);
+      layer.innerHTML='<div class="modal-card"><h3>د یوزر معلومات ایډیټ</h3><div class="field"><label>یوزرنوم</label><input id="eu-user" value="'+escapeHtml(eu?eu.username:'')+'"></div><div class="field"><label>پاسورډ</label><input id="eu-pass" value="'+escapeHtml(eu?eu.password:'')+'"></div>'+(eu&&eu.role==='nto'?'<div class="field"><label>ادرس</label><input id="eu-addr" value="'+escapeHtml(eu.address||'')+'"></div><div class="field"><label>اړیکې شمیره</label><input id="eu-contact" value="'+escapeHtml(eu.contact||'')+'"></div>':'')+'<div class="field"><label>حالت</label><select id="eu-status"><option value="enabled">فعاله</option><option value="disabled">غیر فعاله</option><option value="pending_admin">د اډمین تایید ته انتظار</option><option value="rejected_admin">د اډمین لخوا رد شوی</option></select></div><div class="field"><label>جوړونکی</label><select id="eu-createdBy">'+(function(){
+        var creators=state.users.filter(function(x){return x.role==='manager'||x.role==='admin';});
+        var current=eu?(eu.createdBy||''):'';
+        var hasCurrent=creators.some(function(x){return x.username===current;});
+        var opts=creators.map(function(x,i){return '<option value="'+escapeHtml(x.username)+'">'+(i+1)+' - '+escapeHtml(x.username)+'</option>';}).join('');
+        if(current&&!hasCurrent) opts='<option value="'+escapeHtml(current)+'">'+escapeHtml(current)+'</option>'+opts;
+        return opts;
+      })()+'</select></div><div class="modal-actions"><button class="btn btn-gold" id="eu-save">ذخیره</button><button class="btn btn-ghost" id="eu-cancel">لغوه کول</button></div></div>';
+      setTimeout(function(){
+        var st=document.getElementById('eu-status');
+        var cb=document.getElementById('eu-createdBy');
+        if(st&&eu)st.value=eu.status||'enabled';
+        if(cb&&eu)cb.value=eu.createdBy||'';
+      },0);
     }else if(state.modal.type==='edit-bundle'){
       var eb=state.bundles.find(function(x){return x.id===state.modal.bundleId;});
       layer.innerHTML='<div class="modal-card"><h3>د بنډل ټول معلومات ایډیټ</h3><div class="field"><label>مشتري یوزرنوم</label><input id="eb-nto" value="'+escapeHtml(eb?eb.ntoUsername:'')+'"></div><div class="field"><label>شمیره</label><input id="eb-f1" value="'+escapeHtml(eb?eb.field1:'')+'"></div><div class="field"><label>د بنډل نوم</label><input id="eb-f2" value="'+escapeHtml(eb?eb.field2:'')+'"></div><div class="field"><label>حالت</label><select id="eb-status"><option value="pending">انتظار حالت کې</option><option value="in_process">تر جريان لاندې شو</option><option value="approved">فعاله شو</option><option value="rejected">رد شوى دى</option><option value="resubmit">بیا استول شوى</option><option value="deactivated">غیري فعاله شو</option></select></div><div class="field"><label>یادونه</label><textarea id="eb-comment" rows="3">'+escapeHtml(eb?eb.comment||'':'')+'</textarea></div><div class="field"><label>تائید کوونکی مدیر</label><select id="eb-actioned"><option value="">— مدیر انتخاب کړئ —</option>'+state.users.filter(function(u){return u.role==='manager';}).map(function(m,i){return '<option value="'+escapeHtml(m.username)+'">'+(i+1)+' - '+escapeHtml(m.username)+'</option>';}).join('')+'</select></div><div class="modal-actions"><button class="btn btn-gold" id="eb-save">ذخیره</button><button class="btn btn-ghost" id="eb-cancel">لغوه کول</button></div></div>';
@@ -2470,7 +2486,7 @@
         };
       });
     }
-    if(canDelete){
+    if(canDelete || (viewerRole==='manager' && isNto)){
       Array.prototype.forEach.call(document.querySelectorAll('[data-edit-user]'), function(btn){
         btn.onclick=function(){ openUserEditModal(btn.getAttribute('data-edit-user')); };
       });
@@ -2487,6 +2503,107 @@
         };
       });
     }
+  }
+
+  // ---------------- SALES FOR OTHER MANAGERS' CUSTOMERS ----------------
+  // Shows approved bundles where a manager processed a customer who belongs
+  // to a different manager. For a manager, only that manager's own actions
+  // are shown; Admin sees the combined report grouped by customer owner.
+  function getOtherManagerSalesRows(viewerRole, viewerUsername){
+    var grouped = {};
+    var resetMap = state.otherManagerSalesResetAt || {};
+    state.bundles.forEach(function(b){
+      if(!b || b.status!=='approved') return;
+      var owner = findAssignedManager(b.ntoUsername);
+      var actor = b.actionedBy;
+      if(!owner || !actor) return;
+      if(!state.users.some(function(u){return u.username===actor && u.role==='manager';})) return;
+      if(owner===actor) return;
+      if(viewerRole==='manager' && actor!==viewerUsername) return;
+
+      var resetAt = Number(resetMap[owner]||0);
+      var actionedAt = Number(b.actionedAt)||0;
+      if(resetAt && actionedAt<=resetAt) return;
+
+      if(!grouped[owner]) grouped[owner]={total:0,count:0};
+      grouped[owner].total += extractNumber(b.comment||'');
+      grouped[owner].count += 1;
+    });
+
+    return Object.keys(grouped).map(function(username){
+      return {username:username, count:grouped[username].count, total:grouped[username].total};
+    }).sort(function(a,b){ return a.username.localeCompare(b.username); });
+  }
+
+  function exportOtherManagerSales(rows){
+    if(!rows.length){ showToast('هیڅ د نورو مدیرانو فروشات نشته چې ډاونلوډ شي.'); return; }
+    var data = rows.map(function(r){
+      return {
+        'مدير': r.username,
+        'د فعاله شويو بنډلونو شمير': r.count,
+        'فروشات': r.total
+      };
+    });
+    try{
+      var ws=XLSX.utils.json_to_sheet(data);
+      var wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'ManagerSales');
+      XLSX.writeFile(wb,'manager-sales-'+Date.now()+'.xlsx');
+    }catch(e){ showToast('د ډانلوډ کولو کې تېروتنه.'); }
+  }
+
+  function renderManagerSalesSection(body, headerRow, role){
+    role = role || 'admin';
+    var rows = getOtherManagerSalesRows(role, role==='manager' ? state.currentUser.username : null);
+
+    if(headerRow){
+      headerRow.innerHTML =
+        '<div><h2>'+sectionTitle('manager_sales')+'</h2></div>'+
+        '<div class="header-actions">'+
+          '<button class="icon-btn" id="other-mgr-report-export" title="اکسیل ډانلوډ">&#128190;</button>'+
+        '</div>';
+      document.getElementById('other-mgr-report-export').onclick=function(){
+        exportOtherManagerSales(rows);
+      };
+    }
+
+    if(!rows.length){
+      body.innerHTML='<div class="card"><div class="empty-state">تر اوسه د نورو مدیرانو د مشتریانو لپاره ثبت شوي فروشات نشته.</div></div>';
+      return;
+    }
+
+    body.innerHTML =
+      '<div class="card"><div style="overflow-x:auto;"><table><thead><tr>'+
+        '<th>مدير</th><th>د فعاله شويو بنډلونو شمير</th><th>فروشات</th><th></th>'+
+      '</tr></thead><tbody>'+
+      rows.map(function(r){
+        return '<tr>'+
+          '<td data-label="مدير">'+escapeHtml(r.username)+'</td>'+
+          '<td data-label="د فعاله شويو بنډلونو شمير">'+r.count+'</td>'+
+          '<td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td>'+
+          '<td><button class="icon-btn-sm" data-other-mgr-reset="'+escapeHtml(r.username)+'" title="ریسیټ">&#8635;</button></td>'+
+        '</tr>';
+      }).join('')+
+      '</tbody></table></div></div>';
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-other-mgr-reset]'),function(btn){
+      btn.onclick=function(){
+        var mgr=btn.getAttribute('data-other-mgr-reset');
+        var ok=window.confirm('آیا ډاډه یاست چې غواړئ د '+mgr+' د نورو مدیرانو فروشاتو راپور صفر کړئ؟');
+        if(!ok) return;
+        var resetAt=Date.now();
+        if(!state.otherManagerSalesResetAt) state.otherManagerSalesResetAt={};
+        state.otherManagerSalesResetAt[mgr]=resetAt;
+        db.collection('appdata').doc('salesTotals').set({
+          otherManagerSalesResetAt:state.otherManagerSalesResetAt
+        },{merge:true}).then(function(){
+          showToast('د '+mgr+' د مدیرانو فروشات راپور صفر شو.');
+          render();
+        }).catch(function(){
+          showToast('د راپور د ریسیټ پر مهال تېروتنه وشوه.');
+        });
+      };
+    });
   }
 
   // ---------------- REPORT SECTION ----------------
@@ -2654,12 +2771,29 @@
       }
     }else if(role==='manager'){
       var s = managerStats(state.currentUser.username);
+      var otherRows = getOtherManagerSalesRows('manager', state.currentUser.username);
       body.innerHTML =
         '<div class="card">'+
           '<h4>ستاسو د فروشاتو راپور</h4>'+
           '<div style="font-size:28px;font-weight:800;color:var(--ok);">'+s.total.toLocaleString()+' افغانۍ</div>'+
           '<div class="small-muted" style="margin-top:6px;">فعاله شوې بنډلونو شمير: '+s.count+'</div>'+
+        '</div>'+
+        '<div class="card">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;">'+
+            '<h4 style="margin:0;">د نورو مدیرانو د مشتریانو فروشات</h4>'+
+            '<button class="icon-btn" id="manager-other-sales-export" title="د نورو مدیرانو راپور اکسیل کې ډانلوډ کړئ">&#128190;</button>'+
+          '</div>'+
+          (otherRows.length ?
+            '<div style="overflow-x:auto;"><table><thead><tr><th>مدير</th><th>د فعاله شويو بنډلونو شمير</th><th>فروشات</th></tr></thead><tbody>'+
+            otherRows.map(function(r){
+              return '<tr><td data-label="مدير">'+escapeHtml(r.username)+'</td><td data-label="د فعاله شويو بنډلونو شمير">'+r.count+'</td><td data-label="فروشات">'+r.total.toLocaleString()+' افغانۍ</td></tr>';
+            }).join('')+
+            '</tbody></table></div>' :
+            '<div class="empty-state">تر اوسه تاسو د بل مدیر اړوند د کوم مشتری بنډل نه دی فعال کړی.</div>')+
         '</div>';
+      document.getElementById('manager-other-sales-export').onclick=function(){
+        exportOtherManagerSales(otherRows);
+      };
     }else if(role==='nto'){
       var ns = ntoStats(state.currentUser.username);
       body.innerHTML =
