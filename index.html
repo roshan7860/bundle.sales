@@ -13,6 +13,30 @@
 <meta name="apple-mobile-web-app-title" content="روشن پورټال">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
+<script>
+  // Debug safety net: if a JS error or a failed promise happens before the
+  // app has rendered anything, show the raw error text on the screen itself.
+  // This lets someone report the exact problem from a phone, without needing
+  // to open browser DevTools.
+  (function(){
+    function showErr(text){
+      try{
+        var el = document.getElementById('app');
+        if(el && !el.innerHTML.trim()){
+          el.innerHTML = '<div style="padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap;direction:ltr;text-align:left;color:#B3432B;background:#fff;">'+
+            'یو تخنیکي ستونزه رامنځته شوه. مهرباني وکړئ دا متن واستوئ:\n\n'+text+'</div>';
+        }
+      }catch(e){}
+    }
+    window.addEventListener('error', function(e){
+      showErr((e.message||'Unknown error')+'\n'+(e.filename||'')+':'+(e.lineno||'')+':'+(e.colno||''));
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      var r = e.reason;
+      showErr('Unhandled promise rejection: '+((r && (r.message||r.code)) ? (r.message||r.code) : String(r)));
+    });
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
@@ -2053,20 +2077,4 @@
     }else if(state.modal.type==='change-password'){
       layer.innerHTML =
         '<div class="modal-card">'+
-          '<h3>پاسورډ بدلول</h3>'+
-          (state.pwError ? '<div class="error-box">'+escapeHtml(state.pwError)+'</div>' : '')+
-          '<div class="field"><label>اوسنی پاسورډ</label><input id="pw-current" type="password"></div>'+
-          '<div class="field"><label>نوی پاسورډ</label><input id="pw-new" type="password"></div>'+
-          '<div class="field"><label>نوی پاسورډ بیا ولیکئ</label><input id="pw-confirm" type="password"></div>'+
-          '<div class="modal-actions">'+
-            '<button class="btn btn-gold btn-block" id="pw-submit">بدلول</button>'+
-          '</div>'+
-          '<button class="btn btn-ghost btn-block" id="pw-cancel" style="margin-top:10px;">لغوه کول</button>'+
-        '</div>';
-    }else if(state.modal.type==='user-password'){
-      layer.innerHTML =
-        '<div class="modal-card">'+
-          '<h3>د پاسورډ بدلول — '+escapeHtml(state.modal.username)+'</h3>'+
-          (state.pwError ? '<div class="error-box">'+escapeHtml(state.pwError)+'</div>' : '')+
-          '<div class="field"><label>نوی پاسورډ</label><input id="up-new" type="text"></div>'+
-         
+      
