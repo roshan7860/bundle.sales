@@ -899,7 +899,76 @@
   }
 
   // ---------------- LOGIN VIEW ----------------
+  // The login form itself is gated behind location permission: nothing is
+  // typeable until the browser/device grants location access. This repeats
+  // the request (with the button below) until it succeeds.
   function renderLogin(root){
+    if(!navigator.geolocation || state.geoPermissionGranted){
+      renderLoginForm(root);
+      return;
+    }
+    renderLocationGate(root);
+    requestGeoPermission();
+  }
+
+  function renderLocationGate(root){
+    root.innerHTML =
+      '<div class="login-wrap"><div class="login-card">'+
+        '<div class="login-brand"><div class="mark"></div><span>روشن-نزديک شدن</span></div>'+
+        '<p class="sub">دننه کیدو لپاره لومړی خپل لوکیشن ته اجازه ورکړئ.</p>'+
+        (state.geoError
+          ? '<div class="error-box">'+escapeHtml(state.geoError)+'</div>'
+          : '<div class="error-box" style="background:var(--info-soft);color:var(--info);">'+
+              (state.geoRequesting ? 'ستاسو له لوکیشن سره اجازه غوښتل کیږي، لږ انتظار وباسئ...' : 'مهرباني وکړئ لوکیشن ته اجازه ورکړئ ترڅو دننه کیدلی شئ.')+
+            '</div>')+
+        '<button class="btn btn-primary btn-block" id="geo-allow-btn">لوکیشن ته اجازه ورکړئ</button>'+
+      '</div></div>';
+    var btn = document.getElementById('geo-allow-btn');
+    if(btn){ btn.onclick = function(){ state.geoError=''; requestGeoPermission(); }; }
+  }
+
+  // ---------------- get the most accurate GPS fix available within a time
+  // window. A device's very first fix is often a fast but coarse
+  // network/Wi-Fi-based estimate (which a VPN's changed IP can throw off);
+  // watching for a few seconds and keeping the best (lowest-accuracy-number)
+  // reading favours the real satellite GPS fix over that coarse one. ----------------
+  function getBestPosition(onDone, maxWaitMs){
+    maxWaitMs = maxWaitMs || 9000;
+    if(!navigator.geolocation){ onDone(null); return; }
+    var best = null, done = false, watchId = null;
+    function finish(){
+      if(done) return;
+      done = true;
+      if(watchId!==null && navigator.geolocation.clearWatch){ try{ navigator.geolocation.clearWatch(watchId); }catch(e){} }
+      onDone(best);
+    }
+    try{
+      watchId = navigator.geolocation.watchPosition(function(pos){
+        if(!best || (pos.coords.accuracy||999999) < (best.coords.accuracy||999999)) best = pos;
+        // A reading this precise is a genuine GPS-grade fix -- no need to keep waiting.
+        if(pos.coords.accuracy && pos.coords.accuracy <= 30) finish();
+      }, function(){ finish(); }, {enableHighAccuracy:true, maximumAge:0, timeout:maxWaitMs});
+    }catch(e){ finish(); return; }
+    setTimeout(finish, maxWaitMs);
+  }
+
+  function requestGeoPermission(){
+    if(state.geoRequesting) return;
+    state.geoRequesting = true;
+    render();
+    getBestPosition(function(pos){
+      state.geoRequesting = false;
+      if(pos){
+        state.geoPermissionGranted = true;
+        state.geoError = '';
+      }else{
+        state.geoError = 'تاسو لوکیشن ته اجازه ورنکړه. مهرباني وکړئ "لوکیشن ته اجازه ورکړئ" کلیک کړئ او "Allow" غوره کړئ؛ که مخکې مو "Block" کړی وي، خپل براوزر/موبایل سیټینګونو کې د دې سایټ لوکیشن اجازه فعاله کړئ او بیا هڅه وکړئ.';
+      }
+      render();
+    }, 9000);
+  }
+
+  function renderLoginForm(root){
     root.innerHTML =
       '<div class="login-wrap"><div class="login-card">'+
         '<div class="login-brand"><div class="mark"></div><span>روشن-نزديک شدن</span></div>'+
@@ -947,11 +1016,54 @@
       var tok = uid();
       found.sessionToken = tok;
       state.mySessionToken = tok;
+      found.lastLoginAt = Date.now();
+      found.onlineStatus = 'online';
       persistUsers();
+      recordLoginLocation(found.username);
     }
     saveSession();
     requestNotificationPermission();
     render();
+  }
+
+  // ---------------- best-effort: record a human-readable location for this
+  // login. Prefers the device's real GPS position (accurate) and only
+  // falls back to IP-based geolocation (city-level, sometimes wrong on
+  // mobile networks) if GPS permission isn't granted or isn't available.
+  // Never blocks the login flow and fails silently if unavailable. ----------------
+  function saveLoginLocation(username, text){
+    if(!text) return;
+    var u = state.users.find(function(x){return x.username===username;});
+    if(!u) return;
+    u.lastLoginLocation = text;
+    persistUsers().catch(function(){});
+  }
+  function recordLoginLocationByIp(username){
+    fetch('https://ipwho.is/', {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(d){
+      if(!d || d.success===false) return;
+      var parts = [d.city, d.region, d.country].filter(function(p){ return p; });
+      if(parts.length) saveLoginLocation(username, parts.join('، '));
+    }).catch(function(){ /* ignore -- location is best-effort only */ });
+  }
+  function reverseGeocodeAndSave(username, lat, lon){
+    fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude='+lat+'&longitude='+lon+'&localityLanguage=en', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d){ recordLoginLocationByIp(username); return; }
+        var parts = [d.locality, d.principalSubdivision, d.countryName].filter(function(p){ return p; });
+        if(parts.length) saveLoginLocation(username, parts.join('، '));
+        else recordLoginLocationByIp(username);
+      }).catch(function(){ recordLoginLocationByIp(username); });
+  }
+  function recordLoginLocation(username){
+    // Take a fresh best-effort GPS fix right now (permission is already
+    // granted at this point, so this won't prompt again) rather than the
+    // earlier fix from the login gate, and only fall back to the coarser
+    // IP-based lookup if a real GPS fix can't be obtained.
+    getBestPosition(function(pos){
+      if(pos) reverseGeocodeAndSave(username, pos.coords.latitude, pos.coords.longitude);
+      else recordLoginLocationByIp(username);
+    }, 9000);
   }
 
   function doLogout(){
@@ -962,7 +1074,7 @@
     // background even after the page itself has been logged out, so simply
     // clearing localStorage is not enough.
     state.notifiedBundleIds = {};
-    if(oldUser){ oldUser.fcmTokens = []; oldUser.notificationsEnabled = false; }
+    if(oldUser){ oldUser.fcmTokens = []; oldUser.notificationsEnabled = false; oldUser.onlineStatus = 'offline'; }
     try{
       if(messaging && messaging.deleteToken){ messaging.deleteToken().catch(function(){}); }
     }catch(e){}
@@ -1661,6 +1773,8 @@
     if(status==='disabled') return 'badge-disabled';
     if(status==='pending_admin') return 'badge-pending';
     if(status==='rejected_admin') return 'badge-rejected';
+    if(status==='online') return 'badge-enabled';
+    if(status==='offline') return 'badge-disabled';
     return '';
   }
   function statusLabel(status){
@@ -1676,6 +1790,8 @@
     if(status==='disabled') return 'غیر فعاله';
     if(status==='pending_admin') return 'د اډمین تایید ته انتظار';
     if(status==='rejected_admin') return 'د اډمین لخوا رد شوی';
+    if(status==='online') return 'انلاین';
+    if(status==='offline') return 'آفلاین';
     return status;
   }
   function statusBadge(status){
@@ -2184,6 +2300,19 @@
           '</div>'+
           '<button class="btn btn-ghost btn-block" id="resub-cancel" style="margin-top:10px;">لغوه کول</button>'+
         '</div>';
+    }else if(state.modal.type==='user-info'){
+      var iu = state.users.find(function(x){return x.username===state.modal.username;});
+      layer.innerHTML =
+        '<div class="modal-card">'+
+          '<h3>د یوزر معلومات</h3>'+
+          '<div class="field"><label>یوزرنوم</label><div>'+escapeHtml(iu?iu.username:'')+'</div></div>'+
+          '<div class="field"><label>د جوړیدو نیټه</label><div>'+(iu&&iu.createdAt?fmtDateHtml(iu.createdAt):'نامعلومه')+'</div></div>'+
+          '<div class="field"><label>د جوړونکي نوم</label><div>'+escapeHtml(iu&&iu.createdBy?iu.createdBy:'—')+'</div></div>'+
+          '<div class="field"><label>وروستی ننوتل (نیټه او وخت)</label><div>'+(iu&&iu.lastLoginAt?fmtDateHtml(iu.lastLoginAt):'تر اوسه دننه شوی نه دی')+'</div></div>'+
+          '<div class="field"><label>د ننوتلو ځای (لوکیشن)</label><div>'+escapeHtml(iu&&iu.lastLoginLocation?iu.lastLoginLocation:'نامعلومه')+'</div></div>'+
+          '<div class="field"><label>اوسنی حالت</label><div>'+statusBadge(iu&&iu.onlineStatus==='online'?'online':'offline')+'</div></div>'+
+          '<div class="modal-actions"><button class="btn btn-ghost btn-block" id="ui-close">تړل</button></div>'+
+        '</div>';
     }
 
     document.body.appendChild(layer);
@@ -2371,6 +2500,8 @@
         var rc = document.getElementById('resub-comment');
         if(rc){ rc.addEventListener('input', function(){ if(state.modal) state.modal.draftComment = rc.value; }); }
       })();
+    }else if(state.modal.type==='user-info'){
+      document.getElementById('ui-close').onclick = function(){ state.modal=null; render(); };
     }
   }
 
@@ -2450,7 +2581,7 @@
       (isNto ? '<th>مشتري-ادرس</th><th>اړیکې-شمیره</th><th>جوړونکی</th>' : '')+
       '<th>حالت</th>'+(canToggle || (viewerRole==='manager' && isNto)?'<th></th>':'')+(canDelete?'<th></th><th></th>':'')+'</tr></thead><tbody>'+
       pageList.map(function(u){
-        return '<tr><td data-label="یوزر-نوم">'+escapeHtml(u.username)+'</td>'+(canDelete?'<td data-label="پاسورډ"><span dir="ltr">'+escapeHtml(u.password||'')+'</span></td>':'')+
+        return '<tr><td data-label="یوزر-نوم">'+(viewerRole==='admin' ? '<span class="user-info-link" data-info-user="'+escapeHtml(u.username)+'" style="cursor:pointer;color:var(--info);text-decoration:underline;">'+escapeHtml(u.username)+'</span>' : escapeHtml(u.username))+'</td>'+(canDelete?'<td data-label="پاسورډ"><span dir="ltr">'+escapeHtml(u.password||'')+'</span></td>':'')+
           (isNto ? '<td data-label="مشتري-ادرس">'+escapeHtml(u.address||'—')+'</td><td data-label="اړیکې-شمیره">'+escapeHtml(u.contact||'—')+'</td><td data-label="جوړونکی">'+escapeHtml(u.createdBy||'—')+'</td>' : '')+
           '<td data-label="حالت">'+statusBadge(u.status==='enabled'?'enabled':(u.status||'disabled'))+(u.adminReviewComment ? '<div class="small-muted" style="margin-top:5px;">'+escapeHtml(u.adminReviewComment)+'</div>' : '')+'</td>'+
           (canToggle ? '<td>'+ (u.status==='pending_admin' ? '<button class="btn btn-sm btn-ok" data-approve-user="'+u.username+'">تایید</button> <button class="btn btn-sm btn-danger" data-reject-user="'+u.username+'">رد</button>' : '<button class="btn btn-sm '+(u.status==='enabled'?'btn-danger':'btn-ok')+'" data-toggle="'+u.username+'">'+(u.status==='enabled'?'غیر فعالول':'فعالول')+'</button>') +'</td>' : (viewerRole==='manager' && isNto && u.status==='rejected_admin' ? '<td><button class="btn btn-sm btn-info" data-resubmit-user="'+u.username+'">بیا ځلې اډمین ته لیږل</button></td>' : ''))+
@@ -2463,6 +2594,15 @@
       state.userPage[targetRole] = np;
       renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole);
     });
+
+    if(viewerRole==='admin'){
+      Array.prototype.forEach.call(document.querySelectorAll('[data-info-user]'), function(el){
+        el.onclick = function(){
+          state.modal = {type:'user-info', username: el.getAttribute('data-info-user')};
+          render();
+        };
+      });
+    }
 
     if(canToggle){
       Array.prototype.forEach.call(document.querySelectorAll('[data-toggle]'), function(btn){
@@ -3097,6 +3237,8 @@
       if(gv && gv > Number(state.globalLogoutVersion||0)){
         state.globalLogoutVersion = gv;
         if(state.currentUser){
+          var meUser = state.users.find(function(u){return u.username===state.currentUser.username;});
+          if(meUser){ meUser.onlineStatus = 'offline'; persistUsers().catch(function(){}); }
           state.currentUser = null;
           state.section = null;
           state.modal = null;
