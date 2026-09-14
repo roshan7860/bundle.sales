@@ -1413,19 +1413,15 @@
       };
       var bundlesRef = db.collection('appdata').doc('bundles');
       var historyRef = db.collection('appdata').doc('bundleHistory');
-      db.runTransaction(function(tx){
-        return Promise.all([tx.get(bundlesRef), tx.get(historyRef)]).then(function(reads){
-          var bs=reads[0], hs=reads[1];
-          var list=(bs.exists&&Array.isArray(bs.data().list))?bs.data().list.slice():[];
-          var history=(hs.exists&&Array.isArray(hs.data().list))?hs.data().list.slice():[];
-          list.unshift(entry);
-          history.push({id:uid(),bundleId:entry.id,field1:entry.field1,field2:entry.field2,ntoUsername:entry.ntoUsername,event:'submitted',status:'pending',comment:'',actionedBy:'',createdAt:entry.createdAt});
-          tx.set(bundlesRef,{list:list},{merge:true});
-          tx.set(historyRef,{list:history},{merge:true});
-        });
-      }).then(function(){
+      var historyEntry = {id:uid(),bundleId:entry.id,field1:entry.field1,field2:entry.field2,ntoUsername:entry.ntoUsername,event:'submitted',status:'pending',comment:'',actionedBy:'',createdAt:entry.createdAt};
+      // One Firestore batch: no read of the potentially large bundles/history lists.
+      // This makes sending a new bundle much faster while keeping the bundle itself safe.
+      var batch = db.batch();
+      batch.update(bundlesRef,{list:firebase.firestore.FieldValue.arrayUnion(entry)});
+      batch.update(historyRef,{list:firebase.firestore.FieldValue.arrayUnion(historyEntry)});
+      batch.commit().then(function(){
         state.bundles.unshift(entry);
-        state.bundleHistory.push({id:uid(),bundleId:entry.id,field1:entry.field1,field2:entry.field2,ntoUsername:entry.ntoUsername,event:'submitted',status:'pending',comment:'',actionedBy:'',createdAt:entry.createdAt});
+        state.bundleHistory.push(historyEntry);
         state.bundleDraft = {field1:'', field2:''};
         showToast('بنډل واستول شو، اوس د تمې په حالت کې دی.');
         state.section = 'sales';
@@ -1915,18 +1911,22 @@
     // originally-stored previous status so "لغوه کول" still reverts it
     // correctly instead of getting stuck on 'in_process' forever.
     var previousStatus = (b.status==='in_process') ? (b.prevStatusBeforeProcess || 'pending') : b.status;
+    var previousBundleSnapshot = JSON.parse(JSON.stringify(b));
     b.prevStatusBeforeProcess = previousStatus;
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
     // Open the modal immediately. Waiting for Firestore here made the status
     // click feel slow; the database write continues in the background.
     if(b.type==='deactivate'){
-      state.modal = {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus};
+      state.modal = {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus, previousBundleSnapshot:previousBundleSnapshot};
     }else{
-      state.modal = {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
+      state.modal = {type:'process', bundleId:bundleId, previousStatus:previousStatus, previousBundleSnapshot:previousBundleSnapshot, draftComment:''};
     }
     render();
-    persistBundles().catch(function(){
+    var processRef = db.collection('appdata').doc('bundles');
+    processRef.update({list:firebase.firestore.FieldValue.arrayRemove(previousBundleSnapshot)}).then(function(){
+      return processRef.update({list:firebase.firestore.FieldValue.arrayUnion(JSON.parse(JSON.stringify(b)))});
+    }).catch(function(){
       var live=state.bundles.find(function(x){return x.id===bundleId;});
       if(live){ live.status=previousStatus; live.processingBy=null; live.prevStatusBeforeProcess=null; }
       state.modal=null;
@@ -1942,9 +1942,16 @@
       b.status = state.modal.previousStatus;
       b.processingBy = null;
       b.prevStatusBeforeProcess = null;
-      persistBundles().then(function(){
+      var oldSnap = state.modal.previousBundleSnapshot || JSON.parse(JSON.stringify(b));
+      var newSnap = JSON.parse(JSON.stringify(b));
+      var ref = db.collection('appdata').doc('bundles');
+      ref.update({list:firebase.firestore.FieldValue.arrayRemove(newSnap)}).then(function(){
+        return ref.update({list:firebase.firestore.FieldValue.arrayUnion(oldSnap)});
+      }).then(function(){
         state.modal = null;
         render();
+      }).catch(function(){
+        showToast('د لغوه کولو پر مهال ستونزه وشوه.');
       });
     }else{
       state.modal = null;
@@ -1968,6 +1975,7 @@
     var decisionBtns=['proc-approve','proc-reject'].map(function(id){return document.getElementById(id);});
     decisionBtns.forEach(function(x){if(x){x.disabled=true;x.style.opacity='.6';}});
     var bundleId=state.modal.bundleId;
+    var previousBundleSnapshot=state.modal.previousBundleSnapshot;
     var localB=state.bundles.find(function(x){return x.id===bundleId;});
     if(!localB)return;
     var approvedManager=null;
@@ -1979,49 +1987,62 @@
       if(!approvedManager){showToast('د دې مشتری لپاره مدیر پیدا نه شو؛ فروشات ثبت نه شول.');return;}
     }
     var actionedAt=Date.now(), amount=extractNumber(comment), ntoUser=localB.ntoUsername;
+    var updatedBundle=JSON.parse(JSON.stringify(localB));
+    updatedBundle.status=decision;updatedBundle.comment=comment;updatedBundle.actionedBy=state.currentUser.username;updatedBundle.actionedAt=actionedAt;updatedBundle.processingBy=null;updatedBundle.prevStatusBeforeProcess=null;updatedBundle.ntoSeen=false;
     var bundlesRef=db.collection('appdata').doc('bundles');
-    var totalsRef=db.collection('appdata').doc('salesTotals');
     var historyRef=db.collection('appdata').doc('bundleHistory');
-    showToast(decision==='approved'?'بنډل فعاله کېږي...':'بنډل رد کېږي...');
-    db.runTransaction(function(tx){
-      return Promise.all([tx.get(bundlesRef),tx.get(totalsRef),tx.get(historyRef)]).then(function(reads){
-        var bs=reads[0],ts=reads[1],hs=reads[2];
-        var list=(bs.exists&&Array.isArray(bs.data().list))?bs.data().list.slice():[];
-        var totals=ts.exists?(ts.data()||{}):{};
-        var history=(hs.exists&&Array.isArray(hs.data().list))?hs.data().list.slice():[];
-        var idx=list.findIndex(function(x){return x.id===bundleId;});
-        if(idx<0)throw new Error('bundle-not-found');
-        var current=list[idx];
-        if(current.status!=='in_process' || (current.processingBy && current.processingBy!==state.currentUser.username && state.currentUser.role!=='admin')) throw new Error('bundle-already-changed');
-        var ledger=totals.salesLedger||{};
-        if(decision==='approved'){
-          if(!ledger[bundleId]){
-            var mt=totals.managerSales||{},nt=totals.ntoSales||{};
-            if(!mt[approvedManager])mt[approvedManager]={total:0,count:0};
-            mt[approvedManager]={total:(Number(mt[approvedManager].total)||0)+amount,count:(Number(mt[approvedManager].count)||0)+1};
-            if(ntoUser){if(!nt[ntoUser])nt[ntoUser]={total:0,count:0};nt[ntoUser]={total:(Number(nt[ntoUser].total)||0)+amount,count:(Number(nt[ntoUser].count)||0)+1};}
-            ledger[bundleId]={manager:approvedManager,customer:ntoUser,amount:amount,approvedAt:actionedAt};
-            totals.managerSales=mt;totals.ntoSales=nt;totals.salesLedger=ledger;
-          }
-        }
-        current.status=decision;current.comment=comment;current.actionedBy=state.currentUser.username;current.actionedAt=actionedAt;current.processingBy=null;current.prevStatusBeforeProcess=null;current.ntoSeen=false;
-        list[idx]=current;
-        history.push({id:uid(),bundleId:bundleId,field1:current.field1,field2:current.field2,ntoUsername:current.ntoUsername,event:decision==='approved'?'approved':'rejected',status:decision,comment:comment,actionedBy:state.currentUser.username,createdAt:actionedAt});
-        tx.set(bundlesRef,{list:list},{merge:true});
-        tx.set(historyRef,{list:history},{merge:true});
-        tx.set(totalsRef,{managerSales:totals.managerSales||{},ntoSales:totals.ntoSales||{},salesLedger:totals.salesLedger||{},lastApprovalAt:actionedAt},{merge:true});
-        return {updated:current,ledger:totals.salesLedger||{},managerSales:totals.managerSales||{},ntoSales:totals.ntoSales||{},historyEvent:history[history.length-1]};
+    var historyEvent={id:uid(),bundleId:bundleId,field1:updatedBundle.field1,field2:updatedBundle.field2,ntoUsername:updatedBundle.ntoUsername,event:decision==='approved'?'approved':'rejected',status:decision,comment:comment,actionedBy:state.currentUser.username,createdAt:actionedAt};
+
+    // Update the bundle and history immediately without reading the large arrays.
+    // The UI already changed optimistically, so the user does not wait for sales/report work.
+    var batch=db.batch();
+    batch.update(bundlesRef,{list:firebase.firestore.FieldValue.arrayRemove(previousBundleSnapshot)});
+    batch.update(bundlesRef,{list:firebase.firestore.FieldValue.arrayUnion(updatedBundle)});
+    batch.update(historyRef,{list:firebase.firestore.FieldValue.arrayUnion(historyEvent)});
+
+    // Close the modal and show the new state immediately.
+    var idx=state.bundles.findIndex(function(x){return x.id===bundleId;});
+    if(idx>=0)state.bundles[idx]=updatedBundle;
+    state.modal=null;render();
+
+    var persistPromise=batch.commit();
+    if(decision!=='approved'){
+      persistPromise.then(function(){
+        state.bundleHistory.push(historyEvent);
+        showToast('بنډل رد شو.');
+      }).catch(function(err){
+        console.error(err);
+        if(idx>=0 && previousBundleSnapshot)state.bundles[idx]=previousBundleSnapshot;
+        render();
+        showToast('د بنډل د ثبت پر مهال تېروتنه وشوه؛ بیا هڅه وکړئ.');
       });
-    }).then(function(result){
-      var idx=state.bundles.findIndex(function(x){return x.id===bundleId;});
-      if(idx>=0)state.bundles[idx]=result.updated;
-      state.managerSales=result.managerSales;state.ntoSales=result.ntoSales;
-      state.bundleHistory.push(result.historyEvent);
-      state.modal=null;render();
-      showToast(decision==='approved'?'بنډل فعاله شو او فروشات ثبت شول.':'بنډل رد شو.');
+      return;
+    }
+
+    var totalsRef=db.collection('appdata').doc('salesTotals');
+    // Only salesTotals is read in this transaction. The old implementation also
+    // read/re-wrote bundles and bundleHistory, which was the main source of delay.
+    var salesPromise=db.runTransaction(function(tx){
+      return tx.get(totalsRef).then(function(ts){
+        var totals=ts.exists?(ts.data()||{}):{};
+        var ledger=totals.salesLedger||{};
+        var mt=totals.managerSales||{},nt=totals.ntoSales||{};
+        if(!ledger[bundleId]){
+          if(!mt[approvedManager])mt[approvedManager]={total:0,count:0};
+          mt[approvedManager]={total:(Number(mt[approvedManager].total)||0)+amount,count:(Number(mt[approvedManager].count)||0)+1};
+          if(ntoUser){if(!nt[ntoUser])nt[ntoUser]={total:0,count:0};nt[ntoUser]={total:(Number(nt[ntoUser].total)||0)+amount,count:(Number(nt[ntoUser].count)||0)+1};}
+          ledger[bundleId]={manager:approvedManager,customer:ntoUser,amount:amount,approvedAt:actionedAt};
+        }
+        tx.set(totalsRef,{managerSales:mt,ntoSales:nt,salesLedger:ledger,lastApprovalAt:actionedAt},{merge:true});
+        return {managerSales:mt,ntoSales:nt};
+      });
+    });
+    Promise.all([persistPromise,salesPromise]).then(function(results){
+      state.managerSales=results[1].managerSales;state.ntoSales=results[1].ntoSales;state.bundleHistory.push(historyEvent);render();
+      showToast('بنډل فعاله شو او فروشات ثبت شول.');
     }).catch(function(err){
-      console.error(err);state.modal=null;render();
-      showToast(err&&err.message==='bundle-already-changed'?'دا بنډل مخکې بل حالت ته بدل شوی دی.':'د بنډل د ثبت پر مهال تېروتنه وشوه؛ بیا هڅه وکړئ.');
+      console.error(err);
+      showToast('بنډل فعاله شو، خو د فروشاتو د ثبت پر مهال ستونزه وشوه.');
     });
   }
 
@@ -2030,19 +2051,28 @@
     if(!state.modal) return;
     var b = state.bundles.find(function(x){return x.id===state.modal.bundleId;});
     if(!b) return;
+    var oldSnap = state.modal.previousBundleSnapshot || JSON.parse(JSON.stringify(b));
     b.status = 'deactivated';
     b.actionedBy = state.currentUser.username;
     b.actionedAt = Date.now();
     b.processingBy = null;
     b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
-    // Close immediately; persist the decision in the background.
+    var newSnap = JSON.parse(JSON.stringify(b));
+    // Persist only this bundle. Do not rewrite the complete bundles list.
+    var ref = db.collection('appdata').doc('bundles');
+    var batch = db.batch();
+    batch.update(ref,{list:firebase.firestore.FieldValue.arrayRemove(oldSnap)});
+    batch.update(ref,{list:firebase.firestore.FieldValue.arrayUnion(newSnap)});
     state.modal = null;
     render();
-    persistBundles().then(function(){
+    batch.commit().then(function(){
       showToast('بنډلونه غیري فعاله شول.');
     }).catch(function(err){
       console.error(err);
+      var live=state.bundles.find(function(x){return x.id===newSnap.id;});
+      if(live){live.status=oldSnap.status;live.actionedBy=oldSnap.actionedBy||null;live.actionedAt=oldSnap.actionedAt||null;live.processingBy=oldSnap.processingBy||null;live.prevStatusBeforeProcess=oldSnap.prevStatusBeforeProcess||null;}
+      render();
       showToast('د غیري فعالولو د ثبت پر مهال تېروتنه وشوه.');
     });
   }
