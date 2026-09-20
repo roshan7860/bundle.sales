@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="1.7">
+<meta name="app-build-version" content="1.8">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -737,6 +737,7 @@
     language:(function(){ try{return localStorage.getItem('roshanPortalLanguage')||'en';}catch(e){return 'ps';} })(),
     knownBundleIds:null,  // sentinel: null = not yet initialized, true = initialized
     notifiedBundleIds:{}, // bundle.id -> true once this client has already rung/notified for it (avoids duplicate rings)
+    fastBundleStatuses:{}, // realtime status overlay; avoids client-clock ordering problems
     assignTimer:null,     // pending setTimeout handle, see scheduleAssignWindowRefresh()
     forceDesktop:false,
     mobileMenuOpen:false,
@@ -1053,9 +1054,15 @@
   function loadAllOnce(){
     return Promise.all([
       ensureSeed(),
-      loadJSON('bundles', []).then(function(v){ state.bundles = v; }),
+      loadJSON('bundles', []).then(function(v){ state.bundles = mergeIncomingBundlesKeepingFastStatus(v); }),
       loadJSON('complaints', []).then(function(v){ state.complaints = v; }),
       loadJSON('rolls', []).then(function(v){ state.rolls = v; }),
+      db.collection('appdata').where('type','==','bundleStatus').get().then(function(snap){
+        snap.forEach(function(doc){
+          var d=doc.data()||{};
+          if(d.bundleId && d.status) mergeFastBundleStatuses((function(){var o={};o[d.bundleId]=d;return o;})());
+        });
+      }).catch(function(){}),
       loadJSON('settings', {commissionRate:3}).then(function(v){
         var rate = Number(v && v.commissionRate);
         state.commissionRate = isFinite(rate) && rate >= 0 ? rate : 3;
@@ -1104,6 +1111,93 @@
 
   function persistUsers(){ return saveJSON('users', state.users); }
   function persistBundles(){ return saveJSON('bundles', state.bundles); }
+
+  // Fast status channel: the main bundles document stores a large array, so
+  // rewriting it can take a long time on a slow/mobile connection. Status
+  // changes are also published to a small per-bundle map document. Customers
+  // and managers listen to this channel and update the visible status as soon
+  // as Firestore acknowledges the small write, while the full bundles record
+  // continues to be saved in the background.
+  function publishBundleStatusFast(bundle){
+    if(!bundle || !bundle.id) return Promise.resolve();
+    var payload={
+      type:'bundleStatus',
+      bundleId:bundle.id,
+      status:bundle.status,
+      comment:bundle.comment||null,
+      actionedBy:bundle.actionedBy||null,
+      actionedAt:bundle.actionedAt||null,
+      processingBy:bundle.processingBy||null,
+      prevStatusBeforeProcess:bundle.prevStatusBeforeProcess||null,
+      ntoSeen:bundle.ntoSeen!==false,
+      updatedAt:Number(bundle.updatedAt)||Date.now(),
+      approvalId:bundle.approvalId||null,
+      approvedAt:bundle.approvedAt||null,
+      approvedBy:bundle.approvedBy||null,
+      salesAmount:bundle.salesAmount||null,
+      salesLedgerKey:bundle.salesLedgerKey||null
+    };
+    // IMPORTANT: each bundle has its own tiny Firestore document. The old
+    // shared bundleStatus document caused every status click to compete with
+    // all other status updates. This write is independent and is delivered
+    // through Firestore realtime immediately after the manager clicks.
+    return db.collection('appdata').doc('bundleStatus_'+String(bundle.id)).set(payload,{merge:true});
+  }
+
+  function mergeFastBundleStatuses(statuses){
+    if(!statuses || typeof statuses!=='object') return false;
+    if(!state.fastBundleStatuses) state.fastBundleStatuses={};
+    var changed=false;
+    Object.keys(statuses).forEach(function(id){
+      var patch=statuses[id];
+      if(!patch || !patch.status) return;
+      // IMPORTANT: do not compare the customer's and manager's phone clocks.
+      // Their clocks can differ by minutes. Firestore realtime delivery order
+      // is authoritative for this small status channel.
+      var oldPatch=state.fastBundleStatuses[id];
+      var incomingTime=Number(patch.updatedAt)||0;
+      var oldTime=oldPatch ? (Number(oldPatch.updatedAt)||0) : 0;
+      // A listener can first receive Firestore's cached/older snapshot after
+      // being reattached. Never let that older snapshot overwrite a newer
+      // status that the customer has already received.
+      if(oldPatch && oldTime>incomingTime) return;
+      state.fastBundleStatuses[id]=patch;
+      var b=state.bundles.find(function(x){return x&&x.id===id;});
+      if(!b) return;
+      Object.keys(patch).forEach(function(k){
+        if(patch[k]!==undefined) b[k]=patch[k];
+      });
+      changed=true;
+    });
+    return changed;
+  }
+
+  function mergeIncomingBundlesKeepingFastStatus(newList){
+    if(!Array.isArray(newList)) return state.bundles;
+    var fast=state.fastBundleStatuses||{};
+    return newList.map(function(incoming){
+      if(!incoming || !incoming.id) return incoming;
+      var patch=fast[incoming.id];
+      if(!patch || !patch.status) return incoming;
+      // The large bundles document may arrive a little later than the fast
+      // status document. Never let that older snapshot temporarily move the
+      // customer's status backwards.
+      var incomingTime=Number(incoming.updatedAt)||0;
+      var patchTime=Number(patch.updatedAt)||0;
+      // The main bundles document may still be an older cached snapshot.
+      // Only let it replace the fast status after it has caught up in time.
+      if(incoming.status!==patch.status || incomingTime<patchTime){
+        var merged={};
+        Object.keys(incoming).forEach(function(k){merged[k]=incoming[k];});
+        Object.keys(patch).forEach(function(k){if(patch[k]!==undefined) merged[k]=patch[k];});
+        return merged;
+      }
+      // Main document caught up. Keep its complete record and forget the fast
+      // overlay for this bundle.
+      delete fast[incoming.id];
+      return incoming;
+    });
+  }
   function persistComplaints(){ return saveJSON('complaints', state.complaints); }
   function persistRolls(){ return saveJSON('rolls', state.rolls); }
   function persistSalesTotals(){ return db.collection('appdata').doc('salesTotals').set({managerSales: state.managerSales, ntoSales: state.ntoSales, salesResetAt: state.salesResetAt, customerSalesResetAt: state.customerSalesResetAt||{}, otherManagerSalesResetAt: state.otherManagerSalesResetAt||{}},{merge:true}); }
@@ -1865,7 +1959,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 
     var cardsHtml = menu.map(function(m){
       var count = '';
-      if(m.key==='sales' && ((role==='admin'||role==='manager') ? actionableCount>0 : myUnseen>0)){
+      if(m.key==='sales' && ((role==='admin'||role==='manager'||role==='nto') ? actionableCount>0 : myUnseen>0)){
         var n = (role==='admin'||role==='manager') ? actionableCount : myUnseen;
         count = '<span class="dashboard-card-count">'+n+'</span>';
       }
@@ -1883,7 +1977,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
           (canChangePw ? '<button class="mt-user-item" id="um-changepw">'+uiIcon('key')+' '+escapeHtml(t('changePassword','پاسورډ بدلول'))+'</button>' : '')+
           (role==='admin' ? '<button class="mt-user-item" id="um-commission">'+uiIcon('money')+' کمیسیون ټاکنه</button>' : '')+
           (role==='admin' ? '<button class="mt-user-item" id="um-force-logout">'+uiIcon('lock')+' د ټولو مدیرانو او مشتریانو بیا ننوتل</button>' : '')+
-          ((role==='admin'||role==='manager') ?
+          ((role==='admin'||role==='manager'||role==='nto') ?
             '<div class="mt-language-title">'+uiIcon('language')+' '+escapeHtml(t('language','ژبه'))+'</div>'+
             '<div class="mt-language-row">'+
               '<button class="mt-language-btn '+(state.language==='ps'?'active':'')+'" data-lang="ps">Pashto</button>'+
@@ -2240,14 +2334,9 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       showToast('بنډل لېږل کېږي...');
 
       var bundlesRef = db.collection('appdata').doc('bundles');
-      db.runTransaction(function(tx){
-        return tx.get(bundlesRef).then(function(snap){
-          var current = snap.exists && Array.isArray((snap.data()||{}).list) ? (snap.data()||{}).list : [];
-          // Prevent the same generated ID from ever being inserted twice.
-          if(!current.some(function(x){return x && x.id===entry.id;})) current.unshift(entry);
-          tx.set(bundlesRef, {list:current}, {merge:true});
-        });
-      }).then(function(){
+      // Atomic arrayUnion avoids reading and rewriting the entire bundles list,
+      // so a new customer bundle reaches the managers much faster.
+      bundlesRef.set({list: firebase.firestore.FieldValue.arrayUnion(entry)}, {merge:true}).then(function(){
         showToast('بنډل په بریالیتوب سره واستول شو.');
         state.section='sales';
         renderDashboard(document.getElementById('app'));
@@ -2359,8 +2448,9 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       var ar = a.status==='resubmit' ? 1 : 0;
       var br = b.status==='resubmit' ? 1 : 0;
       if(ar!==br) return br-ar;
-      if(ar===1 && br===1) return (b.waitStartAt||b.createdAt||0) - (a.waitStartAt||a.createdAt||0);
-      return 0;
+      var at = Number(a.waitStartAt||a.createdAt||0);
+      var bt = Number(b.waitStartAt||b.createdAt||0);
+      return bt-at;
     });
     var canProcess = (role==='admin' || role==='manager');
 
@@ -2544,8 +2634,8 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
   // (used to hide a customer's number from a manager until it's approved).
   function maskLast3Digits(str){
     str = String(str==null?'':str);
-    if(str.length<=3) return '***';
-    return escapeHtml(str.slice(0,-3))+'***';
+    if(str.length<=5) return escapeHtml(str);
+    return escapeHtml(str.slice(0,3))+'***'+escapeHtml(str.slice(-2));
   }
 
   // ---------------- ADMIN: delete a single bundle everywhere ----------------
@@ -2702,7 +2792,10 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     var now = Date.now();
     var soonest = null;
     state.bundles.forEach(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return;
+      // Only a still-waiting bundle may trigger the 40-second escalation.
+      // Once a manager has started processing or decided it, other managers
+      // must remain completely silent for that bundle.
+      if(b.status!=='pending' && b.status!=='resubmit') return;
       if(isBundleClaimableByManager(b, state.currentUser.username)) return;
       var startedAt = b.waitStartAt || b.createdAt || 0;
       var remaining = (startedAt + ASSIGN_WAIT_MS) - now;
@@ -2748,8 +2841,14 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       : {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
     render();
 
+    // Send the small status write first. The large bundles transaction is
+    // started only after this fast status write completes, so Firestore cannot
+    // queue the customer-facing status behind the large transaction.
+    var fastClaimWrite = publishBundleStatusFast(b);
+
     var bundlesRef=db.collection('appdata').doc('bundles');
-    db.runTransaction(function(tx){
+    fastClaimWrite.then(function(){
+      return db.runTransaction(function(tx){
       return tx.get(bundlesRef).then(function(snap){
         var list=snap.exists && Array.isArray((snap.data()||{}).list) ? (snap.data()||{}).list : [];
         if(state.pendingBundleDecisions && state.pendingBundleDecisions[bundleId]) throw new Error('decision-in-progress');
@@ -2763,6 +2862,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
         live.processingBy=state.currentUser.username;
         live.updatedAt=Date.now();
         tx.set(bundlesRef,{list:list},{merge:true});
+      });
       });
     }).catch(function(err){
       console.error(err);
@@ -2856,6 +2956,11 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       local.salesAmount=amount;
       local.salesLedgerKey=bundleId+'|'+approvalId+'|'+actionAt;
     }
+    // IMPORTANT: wait for the tiny status write to be sent/acknowledged
+    // before starting the large bundles/sales transaction. Starting both at
+    // once can make Firestore queue the fast status behind the transaction,
+    // which is exactly what caused approved/rejected to reach the customer late.
+    var fastDecisionWrite = publishBundleStatusFast(local);
     state.modal=null;
     render();
     showToast(decision==='approved'?'بنډل فعاله شو؛ معلومات ثبتېږي...':'بنډل رد شو؛ معلومات ثبتېږي...');
@@ -2863,7 +2968,8 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     var bundlesRef=db.collection('appdata').doc('bundles');
     var totalsRef=db.collection('appdata').doc('salesTotals');
 
-    db.runTransaction(function(tx){
+    fastDecisionWrite.then(function(){
+      return db.runTransaction(function(tx){
       return Promise.all([tx.get(bundlesRef),tx.get(totalsRef)]).then(function(reads){
         var bSnap=reads[0], tSnap=reads[1];
         var list=bSnap.exists && Array.isArray((bSnap.data()||{}).list)?(bSnap.data()||{}).list:[];
@@ -2936,6 +3042,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
             },{merge:true});
           }
         }
+        });
       });
     }).then(function(){
       showToast(decision==='approved'?'بنډل فعاله شو او فروشات ثبت شول.':'بنډل رد شو.');
@@ -2965,10 +3072,17 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     b.processingBy = null;
     b.prevStatusBeforeProcess = null;
     b.ntoSeen = false;
-    // Close immediately; persist the decision in the background.
+    b.updatedAt = Date.now();
+    // Send the customer-facing status first; only then start the larger
+    // bundles persistence so the two writes do not compete with each other.
+    var fastDeactivateWrite = publishBundleStatusFast(b);
+    // Close immediately; persist the decision in the background after the
+    // fast status write has completed.
     state.modal = null;
     render();
-    persistBundles().then(function(){
+    fastDeactivateWrite.then(function(){
+      return persistBundles();
+    }).then(function(){
       showToast('بنډلونه غیري فعاله شول.');
     }).catch(function(err){
       console.error(err);
@@ -3011,6 +3125,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     b.ntoSeen=true;
     b.waitStartAt=now;
     b.updatedAt=now;
+    publishBundleStatusFast(b).catch(function(err){console.warn('fast resubmit failed',err);});
     state.modal=null;
     render();
     showToast('بنډل بیا لېږل کېږي...');
@@ -4037,7 +4152,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
         c.replyAt = Date.now();
         list[idx] = c;
         tx.set(complaintsRef, {list:list}, {merge:true});
-      });
+        });
     }).then(function(){
       var local = state.complaints.find(function(c){return c.id===complaintId;});
       if(local){
@@ -4296,9 +4411,52 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
   }
 
   // ---------------- real-time sync ----------------
+  // Do not re-render while an input/textarea is focused. A realtime Firestore
+  // snapshot can otherwise replace the focused element and hide the mobile keyboard.
+  function isUserTyping(){
+    var el=document.activeElement;
+    if(!el) return false;
+    return el.id==='bd-f1' || el.id==='bd-f2' || el.id==='proc-comment' || el.id==='resub-comment' || el.id==='eb-comment';
+  }
+  function renderUnlessTyping(){
+    if(!isUserTyping()) render();
+  }
   function attachListeners(){
     if(state.unsubs) return;
     state.unsubs = [];
+    // Each bundle now has its own tiny status document. Listen to the exact
+    // documents instead of a collection-wide query so a decision (approved/
+    // rejected/deactivated) reaches the customer's screen without waiting
+    // for other bundle-status documents to be scanned/updated.
+    // Keep one realtime listener per bundle. Do NOT unsubscribe/re-subscribe
+    // all listeners whenever the large bundles document changes: doing that
+    // can make Firestore deliver its cached old status again and temporarily
+    // overwrite the customer's new status.
+    state.fastStatusUnsubs = state.fastStatusUnsubs || [];
+    state.fastStatusListenerIds = state.fastStatusListenerIds || {};
+    function refreshDirectBundleStatusListeners(){
+      if(!state.currentUser || !Array.isArray(state.bundles)) return;
+      var mine = state.bundles.filter(function(b){
+        if(!b || !b.id) return false;
+        if(state.currentUser.role==='nto') return b.ntoUsername===state.currentUser.username;
+        return true;
+      });
+      mine.forEach(function(b){
+        var id=String(b.id);
+        if(state.fastStatusListenerIds[id]) return;
+        var ref=db.collection('appdata').doc('bundleStatus_'+id);
+        var unsub=ref.onSnapshot(function(snap){
+          if(!snap.exists) return;
+          var d=snap.data()||{};
+          if(!d.bundleId || !d.status) return;
+          var one={}; one[d.bundleId]=d;
+          if(mergeFastBundleStatuses(one)) renderUnlessTyping();
+        });
+        state.fastStatusListenerIds[id]=true;
+        state.fastStatusUnsubs.push(unsub);
+      });
+    }
+    state.refreshDirectBundleStatusListeners=refreshDirectBundleStatusListeners;
     state.unsubs.push(db.collection('appdata').doc('users').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){
         state.users = snap.data().list;
@@ -4332,6 +4490,8 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
         render();
       }
     }));
+    // Direct per-bundle listeners are attached below from the bundles
+    // realtime snapshot. This is intentionally not a collection-wide query.
     state.unsubs.push(db.collection('appdata').doc('bundles').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){
         var newList = snap.data().list;
@@ -4342,13 +4502,15 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
           checkForNewNtoActivity(newList);
           checkForStatusChangesForNto(newList);
         }
-        state.bundles = newList;
-        render();
+        state.bundles = mergeIncomingBundlesKeepingFastStatus(newList);
+        if(state.refreshDirectBundleStatusListeners) state.refreshDirectBundleStatusListeners();
+        renderUnlessTyping();
       }
     }));
     state.unsubs.push(db.collection('appdata').doc('complaints').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){ state.complaints = snap.data().list; render(); }
     }));
+    refreshDirectBundleStatusListeners();
     state.unsubs.push(db.collection('appdata').doc('rolls').onSnapshot(function(snap){
       if(snap.exists && snap.data().list){ state.rolls = snap.data().list; render(); }
     }));
@@ -4435,9 +4597,15 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
   // bundle that wasn't theirs opens up to all managers ----------------
   function checkForManagerEscalations(){
     if(!state.currentUser || state.currentUser.role!=='manager') return;
+    var now = Date.now();
     var opened = state.bundles.filter(function(b){
-      if(b.status==='approved' || b.status==='rejected' || b.status==='deactivated') return false;
+      // Escalation is allowed ONLY while the bundle is still waiting.
+      // If the assigned manager has already started processing it, or has
+      // approved/rejected/deactivated it, never notify other managers.
+      if(b.status!=='pending' && b.status!=='resubmit') return false;
       if(state.notifiedBundleIds[b.id]) return false;
+      var startedAt = Number(b.waitStartAt || b.createdAt || 0);
+      if(!startedAt || (now - startedAt) < ASSIGN_WAIT_MS) return false;
       return isBundleClaimableByManager(b, state.currentUser.username);
     });
     if(opened.length){
