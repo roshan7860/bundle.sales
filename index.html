@@ -1105,6 +1105,91 @@
 }
 </style>
 
+
+<style>
+/* ---------- Wide Customer Accounts page ---------- */
+.main #sec-body.customer-wide-page{
+  width:100% !important;
+  max-width:1650px !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.customer-wide-page .card{
+  width:100% !important;
+  border-radius:18px !important;
+  padding:22px 22px 20px !important;
+  background:#fff !important;
+  border:1px solid #DDE2E8 !important;
+  box-shadow:0 8px 24px rgba(24,34,52,.045) !important;
+}
+.customer-wide-page .card h4{
+  font-size:16px !important;
+  font-weight:800 !important;
+  margin-bottom:18px !important;
+}
+.customer-wide-page .search-row{
+  margin-bottom:16px !important;
+}
+.customer-wide-page .search-row input{
+  width:100% !important;
+  min-height:46px !important;
+  border-radius:12px !important;
+  background:#fff !important;
+}
+.customer-wide-page .users-table-wrap{
+  width:100% !important;
+  overflow-x:auto !important;
+  border-radius:14px !important;
+}
+.customer-wide-page .users-table{
+  width:100% !important;
+  min-width:980px !important;
+  table-layout:auto !important;
+}
+.customer-wide-page .users-table th,
+.customer-wide-page .users-table td{
+  padding:12px 12px !important;
+  white-space:nowrap !important;
+  vertical-align:middle !important;
+}
+.customer-wide-page .users-table thead th{
+  background:#f6f8fb !important;
+  font-size:12px !important;
+  font-weight:800 !important;
+}
+.customer-wide-page .users-table tbody tr{
+  height:52px !important;
+}
+.customer-wide-page .users-table .user-actions-head{
+  min-width:150px !important;
+}
+.customer-wide-page .users-table .user-actions-cell{
+  min-width:150px !important;
+  white-space:nowrap !important;
+}
+.customer-wide-page .users-table .user-actions-cell .icon-btn-sm{
+  width:34px !important;
+  height:34px !important;
+  margin-inline:3px !important;
+  vertical-align:middle !important;
+}
+.customer-wide-page .users-table .user-actions-cell .btn{
+  margin-inline:2px !important;
+}
+@media(max-width:860px){
+  .main #sec-body.customer-wide-page{
+    width:100% !important;
+    max-width:none !important;
+  }
+  .customer-wide-page .card{
+    padding:17px 14px !important;
+  }
+  .customer-wide-page .users-table{
+    min-width:900px !important;
+  }
+}
+</style>
+
 </head>
 <body>
 <div id="app"></div>
@@ -4183,6 +4268,8 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 
   // ---------------- USERS SECTIONS (managers / ntos) ----------------
   function renderUsersSection(body, targetRole, canToggle, canDelete, viewerRole){
+    var secBodyEl = document.getElementById('sec-body');
+    if(secBodyEl) secBodyEl.classList.toggle('customer-wide-page', targetRole==='nto');
     // Managers only see the customer accounts THEY created; other managers'
     // customers stay hidden from them. Admin still sees everyone.
     var fullList = state.users.filter(function(u){
@@ -4268,15 +4355,17 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 
     listEl.innerHTML = '<div class="users-table-wrap" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>یوزر-نوم</th>'+(canDelete?'<th>پاسورډ</th>':'')+(canSeeOnline?'<th>آنلاین حالت</th>':'')+
       (isNto ? '<th>مشتری-ادرس</th><th>اړیکې-شمیره</th><th>جوړونکی</th>' : '')+
-      '<th>حالت</th>'+(canToggle || (viewerRole==='manager' && isNto)?'<th></th>':'')+(canDelete?'<th></th>':'')+(canSeeInfo?'<th></th>':'')+(canDelete?'<th></th>':'')+'</tr></thead><tbody>'+
+      '<th>حالت</th>'+((canToggle || (viewerRole==='manager' && isNto) || canDelete || canSeeInfo) ? '<th class="user-actions-head">عملیات</th>' : '')+'</tr></thead><tbody>'+
       pageList.map(function(u){
         return '<tr><td data-label="یوزر-نوم">'+escapeHtml(u.username)+'</td>'+(canDelete?'<td data-label="پاسورډ"><span dir="ltr">'+escapeHtml(u.password||'')+'</span></td>':'')+(canSeeOnline?'<td data-label="آنلاین حالت">'+onlineDot(u.onlineStatus)+'</td>':'')+
           (isNto ? '<td data-label="مشتری-ادرس">'+escapeHtml(u.address||'—')+'</td><td data-label="اړیکې-شمیره">'+escapeHtml(u.contact||'—')+'</td><td data-label="جوړونکی">'+escapeHtml(u.createdBy||'—')+'</td>' : '')+
           '<td data-label="حالت">'+statusBadge(u.status==='enabled'?'enabled':(u.status||'disabled'))+(u.adminReviewComment ? '<div class="small-muted" style="margin-top:5px;">'+escapeHtml(u.adminReviewComment)+'</div>' : '')+'</td>'+
-          (canToggle ? '<td>'+ (u.status==='pending_admin' ? '<button class="btn btn-sm btn-ok" data-approve-user="'+u.username+'">تایید</button> <button class="btn btn-sm btn-danger" data-reject-user="'+u.username+'">رد</button>' : '<button class="btn btn-sm '+(u.status==='enabled'?'btn-danger':'btn-ok')+'" data-toggle="'+u.username+'">'+(u.status==='enabled'?'غیر فعالول':'فعالول')+'</button>') +'</td>' : (viewerRole==='manager' && isNto && u.status==='rejected_admin' ? '<td><button class="btn btn-sm btn-info" data-resubmit-user="'+u.username+'">بیا ځلې اډمین ته لیږل</button></td>' : ''))+
-          (canDelete ? '<td><button class="icon-btn-sm" data-edit-user="'+u.username+'" title="ایډیټ">'+uiIcon('edit')+'</button></td>' : '')+
-          (canSeeInfo ? '<td><button class="icon-btn-sm" data-info-user="'+u.username+'" title="معلومات">'+uiIcon('eye')+'</button></td>' : '')+
-          (canDelete ? '<td><button class="icon-btn-sm" data-delete-user="'+u.username+'" title="ډیلیټ">'+uiIcon('delete')+'</button></td>' : '')+
+          ( (canToggle || (viewerRole==='manager' && isNto) || canDelete || canSeeInfo) ? '<td data-label="عملیات" class="user-actions-cell">'+
+            (canToggle ? (u.status==='pending_admin' ? '<button class="btn btn-sm btn-ok" data-approve-user="'+u.username+'">تایید</button> <button class="btn btn-sm btn-danger" data-reject-user="'+u.username+'">رد</button>' : '<button class="btn btn-sm '+(u.status==='enabled'?'btn-danger':'btn-ok')+'" data-toggle="'+u.username+'">'+(u.status==='enabled'?'غیر فعالول':'فعالول')+'</button>') : (viewerRole==='manager' && isNto && u.status==='rejected_admin' ? '<button class="btn btn-sm btn-info" data-resubmit-user="'+u.username+'">بیا ځلې اډمین ته لیږل</button>' : ''))+
+            (canDelete ? '<button class="icon-btn-sm" data-edit-user="'+u.username+'" title="ایډیټ">'+uiIcon('edit')+'</button>' : '')+
+            (canSeeInfo ? '<button class="icon-btn-sm" data-info-user="'+u.username+'" title="معلومات">'+uiIcon('eye')+'</button>' : '')+
+            (canDelete ? '<button class="icon-btn-sm" data-delete-user="'+u.username+'" title="ډیلیټ">'+uiIcon('delete')+'</button>' : '')+
+          '</td>' : '')+
         '</tr>';
       }).join('')+
     '</tbody></table></div>';
@@ -6088,5 +6177,36 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 }
 </style>
 
+
+<style id="users-actions-visible-fix">
+/* Keep Admin customer actions visible even when the account table is wider than the viewport. */
+.users-table .user-actions-head,
+.users-table .user-actions-cell{
+  position:sticky !important;
+  left:0 !important;
+  z-index:5 !important;
+  background:#fff !important;
+  min-width:154px !important;
+  width:154px !important;
+  white-space:nowrap !important;
+  box-shadow:-6px 0 10px rgba(24,34,52,.05);
+}
+.users-table .user-actions-head{background:#f6f8fb !important;}
+.users-table .user-actions-cell{
+  display:table-cell !important;
+  text-align:center !important;
+}
+.users-table .user-actions-cell .icon-btn-sm{margin:0 2px !important;}
+@media(max-width:860px){
+  .users-table .user-actions-head,
+  .users-table .user-actions-cell{
+    position:static !important;
+    min-width:0 !important;
+    width:auto !important;
+    box-shadow:none !important;
+  }
+  .users-table .user-actions-cell{display:flex !important;align-items:center !important;justify-content:flex-start !important;gap:5px !important;flex-wrap:wrap !important;}
+}
+</style>
 </body>
 </html>
