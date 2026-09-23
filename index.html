@@ -6178,6 +6178,39 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 </style>
 
 
+<style id="all-pages-wide-layout">
+/* ---------- Wide layout for ALL internal pages ---------- */
+.main #sec-body{
+  width:100% !important;
+  max-width:1650px !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+.main #sec-body > .card,
+.main #sec-body > .grid-2,
+.main #sec-body > .sales-summary-grid,
+.main #sec-body > .sales-detail-grid,
+.main #sec-body > .manager-sales-summary-grid,
+.main #sec-body > .manager-sales-detail-grid,
+.main #sec-body > .dashboard-home{
+  width:100% !important;
+  max-width:none !important;
+}
+.main #sec-body .card{
+  width:100% !important;
+}
+/* Keep desktop content close to the screen edges like the customer page. */
+@media(min-width:861px){
+  .main{padding-left:24px !important;padding-right:24px !important;}
+}
+@media(max-width:860px){
+  .main #sec-body{
+    width:100% !important;
+    max-width:none !important;
+  }
+}
+</style>
+
 <style id="users-actions-visible-fix">
 /* Keep Admin customer actions visible even when the account table is wider than the viewport. */
 .users-table .user-actions-head,
