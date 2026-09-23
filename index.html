@@ -4018,7 +4018,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
 
     if(state.modal.type==='edit-user'){
       var eu=state.users.find(function(x){return x.username===state.modal.username;});
-      layer.innerHTML='<div class="modal-card"><h3>د یوزر معلومات ایډیټ</h3><div class="field"><label>یوزرنوم</label><input id="eu-user" value="'+escapeHtml(eu?eu.username:'')+'"></div><div class="field"><label>پاسورډ</label><input id="eu-pass" value="'+escapeHtml(eu?eu.password:'')+'"></div>'+(eu&&eu.role==='nto'?'<div class="field"><label>ادرس</label><input id="eu-addr" value="'+escapeHtml(eu.address||'')+'"></div><div class="field"><label>اړیکې شمیره</label><input id="eu-contact" value="'+escapeHtml(eu.contact||'')+'"></div>':'')+'<div class="field"><label>حالت</label><select id="eu-status"><option value="enabled">فعاله</option><option value="disabled">غیر فعاله</option><option value="pending_admin">د اډمین تایید ته انتظار</option><option value="rejected_admin">د اډمین لخوا رد شوی</option></select></div><div class="field"><label>جوړونکی</label><input id="eu-createdBy" value="'+escapeHtml(eu?eu.createdBy||'':'')+'"></div><div class="modal-actions"><button class="btn btn-gold" id="eu-save">ذخیره</button><button class="btn btn-ghost" id="eu-cancel">لغوه کول</button></div></div>';
+      layer.innerHTML='<div class="modal-card"><h3>د یوزر معلومات ایډیټ</h3><div class="field"><label>یوزرنوم</label><input id="eu-user" value="'+escapeHtml(eu?eu.username:'')+'"></div><div class="field"><label>پاسورډ</label><input id="eu-pass" value="'+escapeHtml(eu?eu.password:'')+'"></div>'+(eu&&eu.role==='nto'?'<div class="field"><label>ادرس</label><input id="eu-addr" value="'+escapeHtml(eu.address||'')+'"></div><div class="field"><label>اړیکې شمیره</label><input id="eu-contact" value="'+escapeHtml(eu.contact||'')+'"></div>':'')+'<div class="field"><label>حالت</label><select id="eu-status"><option value="enabled">فعاله</option><option value="disabled">غیر فعاله</option><option value="pending_admin">د اډمین تایید ته انتظار</option><option value="rejected_admin">د اډمین لخوا رد شوی</option></select></div>' + (eu&&eu.role==='nto' ? '<div class="field"><label>جوړونکی (مدیر)</label><select id="eu-createdBy"><option value="">— مدیر انتخاب کړئ —</option>'+state.users.filter(function(x){return x.role==='manager';}).map(function(x,i){return '<option value="'+escapeHtml(x.username)+'">'+(i+1)+' - '+escapeHtml(x.username)+'</option>';}).join('')+'</select></div>' : '<div class="field"><label>جوړونکی</label><input id="eu-createdBy" value="'+escapeHtml(eu?eu.createdBy||'':'')+'"></div>') + '<div class="modal-actions"><button class="btn btn-gold" id="eu-save">ذخیره</button><button class="btn btn-ghost" id="eu-cancel">لغوه کول</button></div></div>';
       setTimeout(function(){var st=document.getElementById('eu-status');if(st&&eu)st.value=eu.status||'enabled';},0);
     }else if(state.modal.type==='edit-bundle'){
       var eb=state.bundles.find(function(x){return x.id===state.modal.bundleId;});
@@ -4266,7 +4266,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     var canSeeOnline = canDelete || (viewerRole==='manager' && isNto);
     var canSeeInfo = viewerRole==='admin' || (viewerRole==='manager' && isNto);
 
-    listEl.innerHTML = '<div style="overflow-x:auto;"><table><thead><tr><th>یوزر-نوم</th>'+(canDelete?'<th>پاسورډ</th>':'')+(canSeeOnline?'<th>آنلاین حالت</th>':'')+
+    listEl.innerHTML = '<div class="users-table-wrap" style="overflow-x:auto;"><table class="users-table"><thead><tr><th>یوزر-نوم</th>'+(canDelete?'<th>پاسورډ</th>':'')+(canSeeOnline?'<th>آنلاین حالت</th>':'')+
       (isNto ? '<th>مشتری-ادرس</th><th>اړیکې-شمیره</th><th>جوړونکی</th>' : '')+
       '<th>حالت</th>'+(canToggle || (viewerRole==='manager' && isNto)?'<th></th>':'')+(canDelete?'<th></th>':'')+(canSeeInfo?'<th></th>':'')+(canDelete?'<th></th>':'')+'</tr></thead><tbody>'+
       pageList.map(function(u){
@@ -6045,6 +6045,45 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
   .manager-daily-diff span{
     font-size:11px !important;
     line-height:1.35 !important;
+  }
+}
+</style>
+
+<style id="users-single-line-fix">
+/* Customer/Manager account table: keep account information on one line. */
+.users-table-wrap{
+  width:100%;
+  overflow-x:auto !important;
+  -webkit-overflow-scrolling:touch;
+}
+.users-table{
+  min-width:max-content;
+}
+.users-table th,
+.users-table td{
+  white-space:nowrap !important;
+  word-break:keep-all !important;
+  overflow-wrap:normal !important;
+  vertical-align:middle !important;
+}
+.users-table td[data-label="مشتری-ادرس"],
+.users-table td[data-label="اړیکې-شمیره"],
+.users-table td[data-label="جوړونکی"],
+.users-table td[data-label="یوزر-نوم"]{
+  white-space:nowrap !important;
+}
+@media(max-width:860px){
+  /* Keep the same one-line text even when the table is displayed as cards. */
+  .users-table{
+    min-width:0 !important;
+  }
+  .users-table td{
+    white-space:nowrap !important;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .users-table td:before{
+    white-space:nowrap !important;
   }
 }
 </style>
