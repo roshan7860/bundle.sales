@@ -3765,11 +3765,6 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
     b.updatedAt = Date.now();
-    // Publish the tiny realtime status immediately, without waiting for the
-    // potentially slow transaction on the large bundles document.
-    var instantClaim={};
-    Object.keys(b).forEach(function(k){instantClaim[k]=b[k];});
-    publishBundleStatusFast(instantClaim).catch(function(err){console.error('Fast claim status:',err);});
     state.modal = b.type==='deactivate'
       ? {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus}
       : {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
