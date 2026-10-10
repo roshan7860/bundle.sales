@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="2.6">
+<meta name="app-build-version" content="2.4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1190,112 +1190,6 @@
 }
 </style>
 
-<style id="customer-accounts-mobile-card-fix">
-/* Mobile-only layout for the customer account list. Each row becomes a clean,
-   separate card so long addresses/status/action buttons cannot overlap. */
-@media(max-width:700px){
-  .main #sec-body.customer-wide-page .users-table-wrap{
-    overflow:visible !important;
-    border-radius:0 !important;
-  }
-  .main #sec-body.customer-wide-page .users-table{
-    display:block !important;
-    width:100% !important;
-    min-width:0 !important;
-    table-layout:auto !important;
-    border-collapse:separate !important;
-    border-spacing:0 !important;
-  }
-  .main #sec-body.customer-wide-page .users-table thead{display:none !important;}
-  .main #sec-body.customer-wide-page .users-table tbody{
-    display:grid !important;
-    grid-template-columns:minmax(0,1fr) !important;
-    gap:12px !important;
-    width:100% !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody tr{
-    display:flex !important;
-    flex-direction:column !important;
-    gap:0 !important;
-    height:auto !important;
-    min-height:0 !important;
-    width:100% !important;
-    padding:8px 12px !important;
-    margin:0 !important;
-    background:#fff !important;
-    border:1px solid #DDE2E8 !important;
-    border-radius:14px !important;
-    box-shadow:0 3px 12px rgba(24,34,52,.045) !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody td{
-    display:grid !important;
-    grid-template-columns:minmax(92px,34%) minmax(0,1fr) !important;
-    align-items:start !important;
-    gap:10px !important;
-    width:100% !important;
-    min-width:0 !important;
-    height:auto !important;
-    padding:9px 0 !important;
-    margin:0 !important;
-    border:0 !important;
-    border-bottom:1px solid #EEF1F4 !important;
-    border-radius:0 !important;
-    white-space:normal !important;
-    overflow:visible !important;
-    overflow-wrap:anywhere !important;
-    word-break:normal !important;
-    text-overflow:clip !important;
-    text-align:right !important;
-    line-height:1.55 !important;
-    background:transparent !important;
-    box-shadow:none !important;
-    position:static !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody td:last-child{border-bottom:0 !important;}
-  .main #sec-body.customer-wide-page .users-table tbody td:before{
-    content:attr(data-label) !important;
-    display:block !important;
-    position:static !important;
-    width:auto !important;
-    min-width:0 !important;
-    height:auto !important;
-    padding:0 !important;
-    margin:0 !important;
-    color:#667085 !important;
-    font-size:11px !important;
-    line-height:1.6 !important;
-    font-weight:800 !important;
-    white-space:normal !important;
-    overflow-wrap:anywhere !important;
-    background:transparent !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody td.user-actions-cell,
-  .main #sec-body.customer-wide-page .users-table tbody td[data-label="عملیات"]{
-    display:flex !important;
-    flex-wrap:wrap !important;
-    align-items:center !important;
-    justify-content:flex-start !important;
-    gap:7px !important;
-    padding-top:12px !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody td.user-actions-cell:before,
-  .main #sec-body.customer-wide-page .users-table tbody td[data-label="عملیات"]:before{
-    flex:0 0 100% !important;
-  }
-  .main #sec-body.customer-wide-page .users-table .user-actions-cell .btn,
-  .main #sec-body.customer-wide-page .users-table .user-actions-cell .icon-btn-sm{
-    position:static !important;
-    width:auto !important;
-    min-width:36px !important;
-    max-width:100% !important;
-    height:auto !important;
-    min-height:36px !important;
-    margin:0 !important;
-    white-space:normal !important;
-  }
-  .main #sec-body.customer-wide-page .users-table tbody td[data-label="حالت"]{align-items:center !important;}
-}
-</style>
 </head>
 <body>
 <div id="app"></div>
@@ -1789,34 +1683,11 @@
       salesAmount:bundle.salesAmount||null,
       salesLedgerKey:bundle.salesLedgerKey||null
     };
-    // Apply the overlay locally before touching the network. This prevents a
-    // slower bundles-array snapshot from reverting the visible status while a
-    // manager has already moved on to another bundle.
-    if(!state.fastBundleStatuses) state.fastBundleStatuses={};
-    var existing=state.fastBundleStatuses[bundle.id];
-    var accepted=!existing || (Number(existing.updatedAt)||0) <= payload.updatedAt;
-    if(accepted) state.fastBundleStatuses[bundle.id]=payload;
-    var localBundle=state.bundles.find(function(x){return x && x.id===bundle.id;});
-    if(localBundle && accepted){
-      Object.keys(payload).forEach(function(k){ if(payload[k]!==undefined) localBundle[k]=payload[k]; });
-    }
-
-    // Keep writes for the SAME bundle in order, but never block a different
-    // bundle on this queue. This prevents a delayed older status write from
-    // overwriting a newer decision for that bundle.
-    if(!state.fastStatusWriteChains) state.fastStatusWriteChains={};
-    var id=String(bundle.id), previous=state.fastStatusWriteChains[id]||Promise.resolve();
-    var write=previous.catch(function(){}).then(function(){
-      var newest=state.fastBundleStatuses[id];
-      // Skip obsolete queued writes if a newer status is already queued.
-      if(newest && (Number(newest.updatedAt)||0) > payload.updatedAt) return;
-      return db.collection('appdata').doc('bundleStatus_'+id).set(payload,{merge:true});
-    });
-    var wrapped=write.finally(function(){
-      if(state.fastStatusWriteChains[id]===wrapped) delete state.fastStatusWriteChains[id];
-    });
-    state.fastStatusWriteChains[id]=wrapped;
-    return wrapped;
+    // IMPORTANT: each bundle has its own tiny Firestore document. The old
+    // shared bundleStatus document caused every status click to compete with
+    // all other status updates. This write is independent and is delivered
+    // through Firestore realtime immediately after the manager clicks.
+    return db.collection('appdata').doc('bundleStatus_'+String(bundle.id)).set(payload,{merge:true});
   }
 
   function mergeFastBundleStatuses(statuses){
@@ -3764,15 +3635,9 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     b.prevStatusBeforeProcess = previousStatus;
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
-    b.updatedAt = Date.now();
     state.modal = b.type==='deactivate'
       ? {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus}
       : {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
-    // Publish the small status record immediately, without waiting for the
-    // slower transaction on the large bundles array. The transaction still
-    // decides who owns the claim; a failed claim is rolled back below.
-    b.updatedAt=Date.now();
-    var instantClaim=publishBundleStatusFast(b).catch(function(err){console.warn('Fast claim status:',err);});
     render();
 
     // The Firestore transaction is the authoritative claim. The fast status
@@ -3796,17 +3661,10 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
         b.prevStatusBeforeProcess=prev; b.status='in_process'; b.processingBy=state.currentUser.username; b.updatedAt=live.updatedAt;
         return live;
       });
-    }).then(function(live){
-      // The immediate fast update has already been published. Do not send
-      // an older transaction snapshot over a newer approve/reject decision.
-    }).catch(function(err){
+    }).then(function(live){return publishBundleStatusFast(live);}).catch(function(err){
       console.error(err);
       var live=state.bundles.find(function(x){return x.id===bundleId;});
-      if(live && !(state.pendingBundleDecisions && state.pendingBundleDecisions[bundleId])){
-        live.status=previousStatus;live.processingBy=null;live.prevStatusBeforeProcess=null;
-        live.updatedAt=Date.now();
-        publishBundleStatusFast(live).catch(function(e){console.error(e);});
-      }
+      if(live){live.status=previousStatus;live.processingBy=null;live.prevStatusBeforeProcess=null;}
       if(state.modal && state.modal.bundleId===bundleId) state.modal=null;
       showToast(err && err.message==='bundle-busy' ? 'دا بنډل اوس د بل مدیر تر پروسس لاندې دی.' : 'د بنډل حالت ثبت نه شو، مهرباني وکړئ بیا هڅه وکړئ.');
       render();
