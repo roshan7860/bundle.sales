@@ -6,7 +6,7 @@
 <title>Roshan Bundle Activation</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#101826">
-<meta name="app-build-version" content="2.5">
+<meta name="app-build-version" content="2.4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -3764,9 +3764,20 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     b.prevStatusBeforeProcess = previousStatus;
     b.status = 'in_process';
     b.processingBy = state.currentUser.username;
+    b.updatedAt = Date.now();
+    // Publish the tiny realtime status immediately, without waiting for the
+    // potentially slow transaction on the large bundles document.
+    var instantClaim={};
+    Object.keys(b).forEach(function(k){instantClaim[k]=b[k];});
+    publishBundleStatusFast(instantClaim).catch(function(err){console.error('Fast claim status:',err);});
     state.modal = b.type==='deactivate'
       ? {type:'deactivate-confirm', bundleId:bundleId, previousStatus:previousStatus}
       : {type:'process', bundleId:bundleId, previousStatus:previousStatus, draftComment:''};
+    // Publish the small status record immediately, without waiting for the
+    // slower transaction on the large bundles array. The transaction still
+    // decides who owns the claim; a failed claim is rolled back below.
+    b.updatedAt=Date.now();
+    var instantClaim=publishBundleStatusFast(b).catch(function(err){console.warn('Fast claim status:',err);});
     render();
 
     // The Firestore transaction is the authoritative claim. The fast status
@@ -3790,10 +3801,17 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
         b.prevStatusBeforeProcess=prev; b.status='in_process'; b.processingBy=state.currentUser.username; b.updatedAt=live.updatedAt;
         return live;
       });
-    }).then(function(live){return publishBundleStatusFast(live);}).catch(function(err){
+    }).then(function(live){
+      // The immediate fast update has already been published. Do not send
+      // an older transaction snapshot over a newer approve/reject decision.
+    }).catch(function(err){
       console.error(err);
       var live=state.bundles.find(function(x){return x.id===bundleId;});
-      if(live){live.status=previousStatus;live.processingBy=null;live.prevStatusBeforeProcess=null;}
+      if(live && !(state.pendingBundleDecisions && state.pendingBundleDecisions[bundleId])){
+        live.status=previousStatus;live.processingBy=null;live.prevStatusBeforeProcess=null;
+        live.updatedAt=Date.now();
+        publishBundleStatusFast(live).catch(function(e){console.error(e);});
+      }
       if(state.modal && state.modal.bundleId===bundleId) state.modal=null;
       showToast(err && err.message==='bundle-busy' ? 'دا بنډل اوس د بل مدیر تر پروسس لاندې دی.' : 'د بنډل حالت ثبت نه شو، مهرباني وکړئ بیا هڅه وکړئ.');
       render();
