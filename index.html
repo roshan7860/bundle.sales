@@ -1190,6 +1190,112 @@
 }
 </style>
 
+<style id="customer-accounts-mobile-card-fix">
+/* Mobile-only layout for the customer account list. Each row becomes a clean,
+   separate card so long addresses/status/action buttons cannot overlap. */
+@media(max-width:700px){
+  .main #sec-body.customer-wide-page .users-table-wrap{
+    overflow:visible !important;
+    border-radius:0 !important;
+  }
+  .main #sec-body.customer-wide-page .users-table{
+    display:block !important;
+    width:100% !important;
+    min-width:0 !important;
+    table-layout:auto !important;
+    border-collapse:separate !important;
+    border-spacing:0 !important;
+  }
+  .main #sec-body.customer-wide-page .users-table thead{display:none !important;}
+  .main #sec-body.customer-wide-page .users-table tbody{
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:12px !important;
+    width:100% !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody tr{
+    display:flex !important;
+    flex-direction:column !important;
+    gap:0 !important;
+    height:auto !important;
+    min-height:0 !important;
+    width:100% !important;
+    padding:8px 12px !important;
+    margin:0 !important;
+    background:#fff !important;
+    border:1px solid #DDE2E8 !important;
+    border-radius:14px !important;
+    box-shadow:0 3px 12px rgba(24,34,52,.045) !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody td{
+    display:grid !important;
+    grid-template-columns:minmax(92px,34%) minmax(0,1fr) !important;
+    align-items:start !important;
+    gap:10px !important;
+    width:100% !important;
+    min-width:0 !important;
+    height:auto !important;
+    padding:9px 0 !important;
+    margin:0 !important;
+    border:0 !important;
+    border-bottom:1px solid #EEF1F4 !important;
+    border-radius:0 !important;
+    white-space:normal !important;
+    overflow:visible !important;
+    overflow-wrap:anywhere !important;
+    word-break:normal !important;
+    text-overflow:clip !important;
+    text-align:right !important;
+    line-height:1.55 !important;
+    background:transparent !important;
+    box-shadow:none !important;
+    position:static !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody td:last-child{border-bottom:0 !important;}
+  .main #sec-body.customer-wide-page .users-table tbody td:before{
+    content:attr(data-label) !important;
+    display:block !important;
+    position:static !important;
+    width:auto !important;
+    min-width:0 !important;
+    height:auto !important;
+    padding:0 !important;
+    margin:0 !important;
+    color:#667085 !important;
+    font-size:11px !important;
+    line-height:1.6 !important;
+    font-weight:800 !important;
+    white-space:normal !important;
+    overflow-wrap:anywhere !important;
+    background:transparent !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody td.user-actions-cell,
+  .main #sec-body.customer-wide-page .users-table tbody td[data-label="عملیات"]{
+    display:flex !important;
+    flex-wrap:wrap !important;
+    align-items:center !important;
+    justify-content:flex-start !important;
+    gap:7px !important;
+    padding-top:12px !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody td.user-actions-cell:before,
+  .main #sec-body.customer-wide-page .users-table tbody td[data-label="عملیات"]:before{
+    flex:0 0 100% !important;
+  }
+  .main #sec-body.customer-wide-page .users-table .user-actions-cell .btn,
+  .main #sec-body.customer-wide-page .users-table .user-actions-cell .icon-btn-sm{
+    position:static !important;
+    width:auto !important;
+    min-width:36px !important;
+    max-width:100% !important;
+    height:auto !important;
+    min-height:36px !important;
+    margin:0 !important;
+    white-space:normal !important;
+  }
+  .main #sec-body.customer-wide-page .users-table tbody td[data-label="حالت"]{align-items:center !important;}
+}
+</style>
 </head>
 <body>
 <div id="app"></div>
@@ -1683,11 +1789,34 @@
       salesAmount:bundle.salesAmount||null,
       salesLedgerKey:bundle.salesLedgerKey||null
     };
-    // IMPORTANT: each bundle has its own tiny Firestore document. The old
-    // shared bundleStatus document caused every status click to compete with
-    // all other status updates. This write is independent and is delivered
-    // through Firestore realtime immediately after the manager clicks.
-    return db.collection('appdata').doc('bundleStatus_'+String(bundle.id)).set(payload,{merge:true});
+    // Apply the overlay locally before touching the network. This prevents a
+    // slower bundles-array snapshot from reverting the visible status while a
+    // manager has already moved on to another bundle.
+    if(!state.fastBundleStatuses) state.fastBundleStatuses={};
+    var existing=state.fastBundleStatuses[bundle.id];
+    var accepted=!existing || (Number(existing.updatedAt)||0) <= payload.updatedAt;
+    if(accepted) state.fastBundleStatuses[bundle.id]=payload;
+    var localBundle=state.bundles.find(function(x){return x && x.id===bundle.id;});
+    if(localBundle && accepted){
+      Object.keys(payload).forEach(function(k){ if(payload[k]!==undefined) localBundle[k]=payload[k]; });
+    }
+
+    // Keep writes for the SAME bundle in order, but never block a different
+    // bundle on this queue. This prevents a delayed older status write from
+    // overwriting a newer decision for that bundle.
+    if(!state.fastStatusWriteChains) state.fastStatusWriteChains={};
+    var id=String(bundle.id), previous=state.fastStatusWriteChains[id]||Promise.resolve();
+    var write=previous.catch(function(){}).then(function(){
+      var newest=state.fastBundleStatuses[id];
+      // Skip obsolete queued writes if a newer status is already queued.
+      if(newest && (Number(newest.updatedAt)||0) > payload.updatedAt) return;
+      return db.collection('appdata').doc('bundleStatus_'+id).set(payload,{merge:true});
+    });
+    var wrapped=write.finally(function(){
+      if(state.fastStatusWriteChains[id]===wrapped) delete state.fastStatusWriteChains[id];
+    });
+    state.fastStatusWriteChains[id]=wrapped;
+    return wrapped;
   }
 
   function mergeFastBundleStatuses(statuses){
