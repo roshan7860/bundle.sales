@@ -1687,7 +1687,25 @@
     // shared bundleStatus document caused every status click to compete with
     // all other status updates. This write is independent and is delivered
     // through Firestore realtime immediately after the manager clicks.
-    return db.collection('appdata').doc('bundleStatus_'+String(bundle.id)).set(payload,{merge:true});
+    // Serialize status writes for this bundle. A delayed claim write can finish
+    // after the manager's final decision; never let that stale in_process update
+    // overwrite a newer approved/rejected/deactivated status in the fast channel.
+    var statusRef=db.collection('appdata').doc('bundleStatus_'+String(bundle.id));
+    return db.runTransaction(function(tx){
+      return tx.get(statusRef).then(function(snap){
+        var old=snap.exists?(snap.data()||{}):{};
+        var oldTime=Number(old.updatedAt)||0;
+        var newTime=Number(payload.updatedAt)||0;
+        var terminal={approved:1,rejected:1,deactivated:1,rejected_admin:1};
+        if(old.status && old.status!=='in_process' && payload.status==='in_process' && oldTime>=newTime){
+          return false;
+        }
+        // More generally, an older status event must not replace a newer event.
+        if(old.status && oldTime>newTime) return false;
+        tx.set(statusRef,payload,{merge:true});
+        return true;
+      });
+    });
   }
 
   function mergeFastBundleStatuses(statuses){
@@ -1703,6 +1721,10 @@
       var oldPatch=state.fastBundleStatuses[id];
       var incomingTime=Number(patch.updatedAt)||0;
       var oldTime=oldPatch ? (Number(oldPatch.updatedAt)||0) : 0;
+      // If a late listener event contains the manager's earlier claim, preserve
+      // a terminal decision already seen for this same bundle.
+      var terminalStatus={approved:1,rejected:1,deactivated:1,rejected_admin:1};
+      if(oldPatch && terminalStatus[oldPatch.status] && patch.status==='in_process' && oldTime>=incomingTime) return;
       // A listener can first receive Firestore's cached/older snapshot after
       // being reattached. Never let that older snapshot overwrite a newer
       // status that the customer has already received.
