@@ -3124,7 +3124,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       }).catch(function(err){
         console.error(err); delete state.pendingBundleWrites[entry.id];
         state.bundles=state.bundles.filter(function(x){return x.id!==entry.id;}); btn.disabled=false; btn.style.opacity=''; state.bundleDraft={field1:v1,field2:v2}; render();
-        showToast(err&&err.message==='bundle-reset-after-submit'?'دا بنډل د ریسیټ له اجرا وروسته لېږل شوی و؛ مهرباني وکړئ بیا یې واستوئ.':'بنډل ونه لېږل شو؛ مهرباني وکړئ بیا هڅه وکړئ.');
+        showToast(err&&err.message==='bundle-reset-after-submit'?'دا بنډل د ریسیټ له اجرا وروسته لېږل شوی و؛ مهرباني وکړئ بیا یې واستوئ.':firestoreWriteErrorMessage(err,'بنډل ونه لېږل شو؛ مهرباني وکړئ بیا هڅه وکړئ.'));
       });
     };
     var list = document.getElementById('bd-list');
@@ -3448,6 +3448,18 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     return escapeHtml(str.slice(0,3))+'***'+escapeHtml(str.slice(-2));
   }
 
+  // Explain Firestore quota exhaustion clearly instead of showing a generic error.
+  function isFirestoreQuotaError(err){
+    var code=String(err && (err.code || err.name) || '').toLowerCase();
+    var msg=String(err && err.message || '').toLowerCase();
+    return code.indexOf('resource-exhausted')!==-1 || msg.indexOf('quota exceeded')!==-1 || msg.indexOf('too many requests')!==-1;
+  }
+  function firestoreWriteErrorMessage(err, fallback){
+    return isFirestoreQuotaError(err)
+      ? 'د Firebase د ورځني Reads حد پوره شوی؛ مهرباني وکړئ د کوټې تر نوي کېدو وروسته بیا هڅه وکړئ.'
+      : fallback;
+  }
+
   // ---------------- ADMIN: delete a single bundle everywhere ----------------
   // Asks for confirmation, then removes just this one bundle from the shared
   // bundles table -- since every role reads the same table, this removes it
@@ -3537,7 +3549,7 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       renderDashboard(document.getElementById('app'));
     }).catch(function(err){
       console.error(err);
-      showToast('د بنډل د ړنګولو پر مهال ستونزه وشوه.');
+      showToast(firestoreWriteErrorMessage(err,'د بنډل د ړنګولو پر مهال ستونزه وشوه.'));
       renderDashboard(document.getElementById('app'));
     });
     });
@@ -4251,16 +4263,22 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
                 var owner=findAssignedManager(edited.ntoUsername), actor=edited.actionedBy;
                 if(owner&&actor&&owner!==actor&&state.users.some(function(u){return u.username===actor&&u.role==='manager';}))ledger[id]={bundleId:id,actor:actor,owner:owner,amount:extractNumber(edited.comment||''),actionedAt:Number(edited.actionedAt)||now};
               }
-              tx.set(bundlesRef,{list:list},{merge:true}); tx.set(totalsRef,{managerSales:mt,ntoSales:nt,otherManagerSalesLedger:ledger,lastBundleEditAt:now},{merge:true});
+              tx.set(bundlesRef,{list:list},{merge:true});
+              tx.set(totalsRef,{managerSales:mt,ntoSales:nt,otherManagerSalesLedger:ledger,lastBundleEditAt:now},{merge:true});
+              // Return the exact values already written so we do not perform
+              // an extra Firestore read immediately after the transaction.
+              return {managerSales:mt,ntoSales:nt,otherManagerSalesLedger:ledger};
             });
-          }).then(function(){
+          }).then(function(updatedTotals){
             state.bundles=state.bundles.map(function(x){return x.id===id?edited:x;});
+            state.managerSales=updatedTotals.managerSales||{};
+            state.ntoSales=updatedTotals.ntoSales||{};
+            state.otherManagerSalesLedger=updatedTotals.otherManagerSalesLedger||{};
             return publishBundleStatusFast(edited);
-          }).then(function(){return totalsRef.get();}).then(function(snap){
-            if(snap.exists){var d=snap.data()||{};state.managerSales=d.managerSales||{};state.ntoSales=d.ntoSales||{};state.otherManagerSalesLedger=d.otherManagerSalesLedger||{};}
+          }).then(function(){
             state.modal=null; showToast('د بنډل معلومات، تایید کوونکی مدیر او خرڅلاو راپور تازه شو.'); render();
           }).catch(function(err){
-            console.error(err); showToast(err&&err.message==='bundle-not-found'?'دا بنډل نور شتون نه لري؛ ښايي ریسیټ شوی وي.':'د بنډل د ذخیره کولو پر مهال تېروتنه وشوه.');
+            console.error(err); showToast(err&&err.message==='bundle-not-found'?'دا بنډل نور شتون نه لري؛ ښايي ریسیټ شوی وي.':firestoreWriteErrorMessage(err,'د بنډل د ذخیره کولو پر مهال تېروتنه وشوه.'));
           });
         };
       }
@@ -5524,26 +5542,11 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
     state.fastStatusUnsubs = state.fastStatusUnsubs || [];
     state.fastStatusListenerIds = state.fastStatusListenerIds || {};
     function refreshDirectBundleStatusListeners(){
-      if(!state.currentUser || !Array.isArray(state.bundles)) return;
-      var mine = state.bundles.filter(function(b){
-        if(!b || !b.id) return false;
-        if(state.currentUser.role==='nto') return b.ntoUsername===state.currentUser.username;
-        return true;
-      });
-      mine.forEach(function(b){
-        var id=String(b.id);
-        if(state.fastStatusListenerIds[id]) return;
-        var ref=db.collection('appdata').doc('bundleStatus_'+id);
-        var unsub=ref.onSnapshot(function(snap){
-          if(!snap.exists) return;
-          var d=snap.data()||{};
-          if(!d.bundleId || !d.status) return;
-          var one={}; one[d.bundleId]=d;
-          if(mergeFastBundleStatuses(one)) renderUnlessTyping();
-        });
-        state.fastStatusListenerIds[id]=true;
-        state.fastStatusUnsubs.push(unsub);
-      });
+      // Read-optimization: do not attach one Firestore realtime listener per bundle.
+      // The authoritative appdata/bundles document already streams status changes
+      // for all roles, so these extra listeners duplicate reads without being needed.
+      // Keep this function as a no-op for older call sites.
+      return;
     }
     state.refreshDirectBundleStatusListeners=refreshDirectBundleStatusListeners;
     state.unsubs.push(db.collection('appdata').doc('users').onSnapshot(function(snap){
