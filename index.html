@@ -3890,7 +3890,14 @@ Object.assign(MISSING_UI_TRANSLATIONS,__ROSHAN_EXTRA_COMPLETE_UI);
       if(cur && cur.actionedAt===actionAt && cur.actionedBy===actor){
         Object.keys(before).forEach(function(k){cur[k]=before[k];});
       }
-      showToast(err&&err.message==='bundle-busy'?'دا بنډل اوس د بل مدیر تر پروسس لاندې دی.':err&&err.message==='bundle-already-decided'?'دا بنډل مخکې لا فیصله شوی دی.':'د بنډل د ثبت پر مهال تېروتنه وشوه، بیا هڅه وکړئ.');
+      var approvalErrorText = err && err.message==='bundle-busy'
+        ? 'دا بنډل اوس د بل مدیر تر پروسس لاندې دی.'
+        : err && err.message==='bundle-already-decided'
+          ? 'دا بنډل مخکې لا فیصله شوی دی.'
+          : (isFirestoreQuotaError(err)
+              ? firestoreWriteErrorMessage(err,'')
+              : 'د بنډل د ثبت پر مهال تېروتنه وشوه ('+String(err && (err.code || err.message) || 'unknown-error')+').');
+      showToast(approvalErrorText);
       render();
     }).finally(function(){
       delete state.pendingBundleDecisions[bundleId];
